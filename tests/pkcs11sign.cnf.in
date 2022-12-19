@@ -1,0 +1,32 @@
+HOME = .
+
+# Use this in order to automatically load providers.
+openssl_conf = openssl_init
+
+config_diagnostics = 1
+
+[openssl_init]
+providers = provider_sect
+alg_section = evp_properties
+
+[provider_sect]
+default = default_sect
+base = base_sect
+pkcs11sign = pkcs11sign_sect
+
+[evp_properties]
+default_properties = ?provider=pkcs11sign
+
+[base_sect]
+activate = 1
+
+[default_sect]
+activate = 1
+
+[pkcs11sign_sect]
+module = @libtoollibs@/pkcs11sign.so
+identity = pkcs11sign
+pkcs11sign-module-path = @pkcs11modulepath@
+pkcs11sign-module-init-args = @pkcs11moduleinitargs@
+pkcs11sign-forward = provider=default
+activate = 1

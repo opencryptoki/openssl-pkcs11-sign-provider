@@ -1,0 +1,12 @@
+set breakpoint pending on
+break ps_asym_rsa_newctx
+break ps_asym_op_dupctx
+break ps_asym_op_get_ctx_params
+break ps_asym_rsa_gettable_ctx_params
+break ps_asym_op_set_ctx_params
+break ps_asym_rsa_settable_ctx_params
+break ps_asym_op_encrypt_init
+break ps_asym_op_encrypt
+break ps_asym_op_decrypt_init
+break ps_asym_rsa_decrypt
+disable

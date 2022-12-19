@@ -1,0 +1,9 @@
+set breakpoint pending on
+break ps_store_open
+break ps_store_load
+break ps_store_eof
+break ps_store_close
+break ps_store_export_object
+break ps_store_set_ctx_params
+break ps_store_settable_ctx_params
+disable

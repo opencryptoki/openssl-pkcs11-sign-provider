@@ -1,0 +1,54 @@
+#!/bin/bash
+# Copyright (C) IBM Corp. 2022
+# SPDX-License-Identifier: Apache-2.0
+
+test -z "${TESTSDIR}" && exit 77
+source "${TESTSDIR}/helpers.sh"
+echo "set breakpoint pending on" > "${TMPPDIR}/ossl.gdb"
+
+echo "##################################################"
+echo "## Tests with openssl commands"
+echo "##"
+echo "## version:"
+echo "## $(openssl version)"
+echo "##"
+
+echo "##################################################"
+echo "## EC: sign/verify (pkcs11/file)"
+echo "##"
+
+ossl '
+dgst -sign "${URI_KEY_ECDSA_PRV}"
+     -sha256
+     -out "${TMPPDIR}/random-1k.bin.ec-sig"
+     "${TMPPDIR}/random-1k.bin"' \
+|| exit 99
+
+ossl '
+dgst -verify "${FILE_PEM_ECDSA_PUB}"
+     -sha256
+     -signature "${TMPPDIR}/random-1k.bin.ec-sig"
+     "${TMPPDIR}/random-1k.bin"' \
+|| exit 99
+
+echo "##################################################"
+echo "## EC: tls-server/client (ECDHE-ECDSA-AES256-GCM-SHA384)"
+echo "##"
+
+rm -f "${TMPPDIR}/fail.*"
+s_server_bg  ${FILE_PEM_CA_CRT} ${URI_KEY_ECDSA_PRV} ${FILE_PEM_ECDSA_CRT} "ECDHE-ECDSA-AES256-GCM-SHA384"
+sleep .5
+s_client     ${FILE_PEM_CA_CRT}
+
+# validation
+test -f "${TMPPDIR}/fail.server" \
+|| exit 99
+echo server: ok
+
+test -f "${TMPPDIR}/fail.client" \
+|| exit 99
+echo "client: ok"
+
+
+
+exit 0
