@@ -1,0 +1,39 @@
+# Copyright (C) 2022 IBM Corp.
+# SPDX-License-Identifier: Apache-2.0
+
+EXTRA_DIST = pkcs11sign.cnf.in
+
+libspath=@abs_top_builddir@/src/.libs
+testsdir=@abs_srcdir@
+
+check_PROGRAMS = ttls
+
+ttls_SOURCES = ttls.c
+ttls_CFLAGS = $(AM_CFLAGS) $(STD_CFLAGS) $(OPENSSL_CFLAGS)
+ttls_LDADD = $(OPENSSL_LIBS)
+
+setup_scripts =
+setup_scripts += setup-ock.sh
+
+tmp.ock:
+	LIBSPATH=$(libspath) \
+	TESTSDIR=$(testsdir) \
+	$(testsdir)/setup-ock.sh > setup-ock.log 2>&1
+
+TESTS = openssl-ock tls-ock
+
+$(TESTS): tmp.ock
+
+dist_check_SCRIPTS = module-test-wrapper \
+	$(setup_scripts) \
+	topenssl
+
+LOG_COMPILER = $(testsdir)/module-test-wrapper
+
+CLEANFILES = setup-*.log
+
+clean-local:
+	rm -rf tmp.ock
+
+DISTCLEANFILES = *~
+MAINTAINERCLEANFILES = Makefile.in
