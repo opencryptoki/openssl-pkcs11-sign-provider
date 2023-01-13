@@ -11,10 +11,46 @@
 #include "provider.h"
 #include "debug.h"
 #include "pkcs11.h"
+#include "uri.h"
 
 struct store_ctx {
 	struct prov_ctx *provctx;
+	struct parsed_uri *puri;
 };
+
+static void ps_store_ctx_free(struct store_ctx *sctx)
+{
+	if (!sctx)
+		return;
+
+	sctx->provctx = NULL;
+
+	parsed_uri_free(sctx->puri);
+	OPENSSL_free(sctx);
+}
+
+static struct store_ctx *ps_store_ctx_init(void *vpctx, const char *uri)
+{
+	struct store_ctx *sctx;
+
+	if (!vpctx || !uri)
+		return NULL;
+
+	sctx = OPENSSL_zalloc(sizeof(struct store_ctx));
+	if (!sctx)
+		return NULL;
+
+	sctx->puri = parsed_uri_new(uri);
+	if (!sctx->puri)
+		goto err;
+
+	sctx->provctx = vpctx;
+
+	return sctx;
+err:
+	ps_store_ctx_free(sctx);
+	return NULL;
+}
 
 #define DISPATCH_STORE_FN(tname, name) DECL_DISPATCH_FUNC(store, tname, name)
 #define DISPATCH_STORE_ELEM(NAME, name) \
@@ -29,9 +65,15 @@ DISPATCH_STORE_FN(export_object, ps_store_export_object);
 DISPATCH_STORE_FN(set_ctx_params, ps_store_set_ctx_params);
 DISPATCH_STORE_FN(settable_ctx_params, ps_store_settable_ctx_params);
 
-static void *ps_store_open(void *pctx, const char *uri)
+static void *ps_store_open(void *vpctx, const char *uri)
 {
-	return NULL;
+	struct store_ctx *sctx;
+
+	sctx = ps_store_ctx_init(vpctx, uri);
+	if (!sctx)
+		return NULL;
+
+	return sctx;
 }
 
 static void *ps_store_attach(void *pctx, OSSL_CORE_BIO *in)
@@ -51,9 +93,16 @@ static int ps_store_eof(void *pctx)
 	return OSSL_RV_ERR;
 }
 
-static int ps_store_close(void *pctx)
+static int ps_store_close(void *vctx)
 {
-	return OSSL_RV_ERR;
+	struct store_ctx *sctx = (struct store_ctx *)vctx;
+
+	if (!sctx)
+		return OSSL_RV_ERR;
+
+	ps_store_ctx_free(sctx);
+
+	return OSSL_RV_OK;
 }
 
 static int ps_store_export_object(void *loaderctx, const void *reference,
