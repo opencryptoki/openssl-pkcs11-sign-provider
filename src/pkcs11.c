@@ -25,11 +25,13 @@ static void pkcs11_module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
 		    pkcs->soname,
 		    (int)ck_info.cryptokiVersion.major,
 		    (int)ck_info.cryptokiVersion.minor);
-	ps_dbg_info(dbg, "%s: libraryDescription: %s",
+	ps_dbg_info(dbg, "%s: libraryDescription: %.*s",
 		    pkcs->soname,
+		    sizeof(ck_info.libraryDescription),
 		    ck_info.libraryDescription);
-	ps_dbg_info(dbg, "%s: manufacturerID: %s",
+	ps_dbg_info(dbg, "%s: manufacturerID: %.*s",
 		    pkcs->soname,
+		    sizeof(ck_info.manufacturerID),
 		    ck_info.manufacturerID);
 	ps_dbg_info(dbg, "%s: libraryVersion: %d.%d",
 		    pkcs->soname,
@@ -85,7 +87,7 @@ CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
 		return CKR_ARGUMENTS_BAD;
 	pkcs->soname = OPENSSL_strdup(module);
 
-	dlerror;
+	dlerror();
 	pkcs->dlhandle = dlopen(module,
 				RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
 	if (!pkcs->dlhandle) {
