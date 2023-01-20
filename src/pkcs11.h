@@ -18,6 +18,24 @@ struct pkcs11_module {
 	} state;
 };
 
+size_t pkcs11_strlen(const CK_CHAR_PTR c, CK_ULONG csize);
+int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize);
+
+CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
+			  CK_SESSION_HANDLE session,
+			  const char *label, const char *id, const char *type,
+			  CK_OBJECT_HANDLE_PTR *objects, CK_ULONG_PTR nobjects,
+			  struct dbg *dbg);
+void pkcs11_session_close(struct pkcs11_module *pkcs11,
+			   CK_SESSION_HANDLE_PTR session, struct dbg *dbg);
+CK_RV pkcs11_session_open_login(struct pkcs11_module *pkcs11,
+				CK_SLOT_ID slot_id,
+				CK_SESSION_HANDLE_PTR session, const char *pin,
+				struct dbg *dbg);
+CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs,
+		       CK_SLOT_ID_PTR *slots, CK_ULONG *nslots,
+		       struct dbg *dbg);
+
 void pkcs11_module_teardown(struct pkcs11_module *pkcs);
 CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
 			 const char *module,
