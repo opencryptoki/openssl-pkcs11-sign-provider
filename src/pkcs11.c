@@ -9,7 +9,7 @@
 #include "debug.h"
 #include "pkcs11.h"
 
-static void pkcs11_module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
+static void module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
 {
 	CK_INFO ck_info = { 0 };
 	CK_RV ck_rv;
@@ -120,7 +120,7 @@ CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
 	}
 
 	pkcs->state = PKCS11_INITIALIZED;
-	pkcs11_module_info(pkcs, dbg);
+	module_info(pkcs, dbg);
 
 	return CKR_OK;
 
