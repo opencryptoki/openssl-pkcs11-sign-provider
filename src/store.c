@@ -17,7 +17,190 @@ struct store_ctx {
 	struct provider_ctx *provctx;
 	struct parsed_uri *puri;
 	struct pkcs11_module *pkcs11;
+	CK_SLOT_ID slot_id;
+	CK_SESSION_HANDLE session;
+	CK_OBJECT_HANDLE_PTR objects;
+	CK_ULONG nobjects;
 };
+
+static bool match_token_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
+			    struct parsed_uri *puri)
+{
+	CK_TOKEN_INFO ti;
+
+	if(!puri->tok_token && !puri->tok_manuf &&
+	   !puri->tok_serial && !puri->tok_model)
+		return true;
+
+	if (pkcs11->fns->C_GetTokenInfo(slot_id, &ti) != CKR_OK)
+		return false;
+
+	if (puri->tok_token &&
+	    (pkcs11_strcmp(puri->tok_token, (const CK_CHAR_PTR)&ti.label,
+			   sizeof(ti.label)) != 0))
+		return false;
+
+	if (puri->tok_manuf &&
+	    (pkcs11_strcmp(puri->tok_manuf, (const CK_CHAR_PTR)&ti.manufacturerID,
+			   sizeof(ti.manufacturerID)) != 0))
+		return false;
+
+	if (puri->tok_serial &&
+	    (pkcs11_strcmp(puri->tok_serial, (const CK_CHAR_PTR)&ti.serialNumber,
+			   sizeof(ti.serialNumber)) != 0))
+		return false;
+
+	if (puri->tok_model &&
+	    (pkcs11_strcmp(puri->tok_model, (const CK_CHAR_PTR)&ti.model,
+			   sizeof(ti.model)) != 0))
+		return false;
+
+	return true;
+}
+
+static bool match_slot_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
+			   struct parsed_uri *puri)
+{
+	CK_SLOT_INFO si;
+
+	if (puri->slt_id &&
+	    (slot_id != strtoul(puri->slt_id, NULL, 10)))
+		return false;
+
+	if (!puri->slt_manuf && !puri->slt_desc)
+		return true;
+
+	if (pkcs11->fns->C_GetSlotInfo(slot_id, &si) != CKR_OK)
+		return false;
+
+	if (puri->slt_manuf &&
+	    (pkcs11_strcmp(puri->slt_manuf, (const CK_CHAR_PTR)&si.manufacturerID,
+			   sizeof(si.manufacturerID)) != 0))
+		return false;
+
+	if (puri->slt_desc &&
+	    (pkcs11_strcmp(puri->slt_desc, (const CK_CHAR_PTR)&si.slotDescription,
+			   sizeof(si.slotDescription)) != 0))
+		return false;
+
+	return true;
+}
+
+static bool match_library_uri(struct pkcs11_module *pkcs11, struct parsed_uri *puri)
+{
+	CK_INFO ci;
+
+	if (!puri->lib_manuf && !puri->lib_desc && !puri->lib_ver)
+		return true;
+
+	if (pkcs11->fns->C_GetInfo(&ci) != CKR_OK)
+		return false;
+
+	if (puri->lib_manuf &&
+	    (pkcs11_strcmp(puri->lib_manuf, (const CK_CHAR_PTR)&ci.manufacturerID,
+			   sizeof(ci.manufacturerID)) != 0))
+		return false;
+
+	if (puri->lib_desc &&
+	    (pkcs11_strcmp(puri->lib_desc, (const CK_CHAR_PTR)&ci.libraryDescription,
+			   sizeof(ci.libraryDescription)) != 0))
+		return false;
+
+	if (puri->lib_ver &&
+	    (puri->lib_ver_major != ci.libraryVersion.major ||
+	     puri->lib_ver_minor != ci.libraryVersion.minor))
+		return false;
+
+	return true;
+}
+
+static int lookup_objects(struct store_ctx *sctx)
+{
+	struct dbg *dbg = &sctx->provctx->dbg;
+	struct pkcs11_module *pkcs11 = sctx->pkcs11;
+	struct parsed_uri *puri = sctx->puri;
+	CK_SLOT_ID_PTR slots = NULL;
+	CK_ULONG nslots = 0, i;
+	CK_RV rv;
+
+	if (!match_library_uri(pkcs11, puri)) {
+		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
+			     sctx);
+		return 1;
+	}
+
+	rv = pkcs11_get_slots(pkcs11, &slots, &nslots, dbg);
+	if (rv != CKR_OK) {
+		ps_dbg_debug(dbg, "sctx: %p, no slots found",
+			     sctx);
+		return 1;
+	}
+
+	for (i = 0; i < nslots; i++) {
+		CK_SLOT_ID sid = slots[i];
+
+		if (!match_slot_uri(pkcs11, sid, puri)) {
+			ps_dbg_debug(dbg, "sctx: %p, slot %lu: slot mismatch",
+				     sctx, sid);
+			continue;
+		}
+
+		if (!match_token_uri(pkcs11, sid, puri)) {
+			ps_dbg_debug(dbg, "sctx: %p, slot %lu: token mismatch",
+				     sctx, sid);
+			continue;
+		}
+
+		if (sctx->slot_id != CK_UNAVAILABLE_INFORMATION) {
+			ps_dbg_debug(dbg, "sctx: %p, too many matching slots/tokens",
+				     sctx);
+			return 1;
+		}
+
+		sctx->slot_id = sid;
+	}
+
+	if (sctx->slot_id == CK_UNAVAILABLE_INFORMATION) {
+		ps_dbg_debug(dbg, "sctx: %p, no matching slot/token found",
+			     sctx);
+		return 1;
+	}
+
+	ps_dbg_debug(dbg, "sctx: %p, token in slot %lu selected",
+		     sctx, sctx->slot_id);
+
+	rv = pkcs11_session_open_login(pkcs11, sctx->slot_id, &sctx->session,
+				  puri->pin, dbg);
+	if (rv != CKR_OK) {
+		return 1;
+	}
+
+	rv = pkcs11_find_objects(pkcs11, sctx->session,
+				 puri->obj_object, puri->obj_id, puri->obj_type,
+				 &sctx->objects, &sctx->nobjects,
+				 dbg);
+	if (rv != CKR_OK) {
+		return 1;
+	}
+
+	if (sctx->nobjects == 0) {
+		ps_dbg_error(dbg, "%s: no objects found in slot %d",
+			     sctx, sctx->slot_id);
+		return 1;
+	}
+
+	/* TODO tolerate up to 3 objects (max 1 of priv, pub and cert) */
+	if (sctx->nobjects > 1) {
+		ps_dbg_error(dbg, "%s: too many (%d) objects found in slot %d",
+			     sctx, sctx->nobjects, sctx->slot_id);
+		OPENSSL_free(sctx->objects);
+		sctx->objects = NULL_PTR;
+		sctx->nobjects = 0;
+		return 1;
+	}
+
+	return 0;
+}
 
 static void ps_store_ctx_free(struct store_ctx *sctx)
 {
@@ -54,6 +237,8 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *provctx,
 	if (!sctx->pkcs11)
 		sctx->pkcs11 = &provctx->pkcs11;
 
+	sctx->slot_id = CK_UNAVAILABLE_INFORMATION;
+
 	return sctx;
 }
 
@@ -85,6 +270,11 @@ static void *ps_store_open(void *vpctx, const char *uri)
 	sctx = store_ctx_init(provctx, uri);
 	if (!sctx)
 		return NULL;
+
+	if (lookup_objects(sctx)) {
+		ps_store_ctx_free(sctx);
+		return NULL;
+	}
 
 	ps_dbg_debug(dbg, "exit: sctx: %p, provctx: %p",
 		     sctx, provctx);
@@ -149,6 +339,8 @@ static int ps_store_close(void *vctx)
 
 	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
 		     sctx, sctx->provctx);
+
+	pkcs11_session_close(&sctx->provctx->pkcs11, &sctx->session, dbg);
 
 	ps_store_ctx_free(sctx);
 
