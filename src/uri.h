@@ -17,6 +17,10 @@ struct parsed_uri {
 	char *priv;
 	char *pin;
 
+	/* only valid if lib_ver != 0 */
+	unsigned long lib_ver_major;
+	unsigned long lib_ver_minor;
+
 	/* path parameter */
 	const char *lib_manuf;
 	const char *lib_desc;

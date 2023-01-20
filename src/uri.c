@@ -250,6 +250,10 @@ static int parse(char *uri, struct parsed_uri *puri)
 		return rv;
 	}
 
+	if (puri->lib_ver)
+		sscanf(puri->lib_ver, "%lu.%lu",
+		       &puri->lib_ver_major, &puri->lib_ver_minor);
+
 	retrieve_pin(puri);
 
 	return 0;
