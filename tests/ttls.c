@@ -21,7 +21,7 @@ int main(void)
 	const SSL_METHOD *method;
 	SSL_CTX *ctx = NULL;
 	OSSL_STORE_CTX *sctx;
-	const char *uri = "pkcs11:token=softtok;object=test_ec_secp256r1;type=private?pin-value=12345678";
+	const char *uri;
 
 	info();
 
@@ -39,14 +39,16 @@ int main(void)
 
 	fprintf(stderr, "SSL Context works!\n");
 
+	uri = getenv("URI_KEY_ECDSA_PRV");
 	sctx = OSSL_STORE_open(uri, NULL, NULL, NULL, NULL);
 	if (!sctx) {
-		fprintf(stderr, "Failed to open store\n");
+		fprintf(stderr, "Failed to open store (uri: %s)\n", uri);
+		ERR_print_errors_fp(stderr);
 		exit(EXIT_FAILURE);
 	}
 
 	OSSL_STORE_close(sctx);
-	fprintf(stderr, "Store open/close works!\n");
+	fprintf(stderr, "Store open/close works! (uri: %s)\n", uri);
 
 	return 0;
 }
