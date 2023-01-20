@@ -36,6 +36,7 @@ struct parsed_uri {
 	const char *obj_id;
 
 	struct key_value *vendor_pattr;
+	size_t vendor_pattr_len;
 
 	/* query parameter */
 	const char *mod_name;
@@ -45,6 +46,7 @@ struct parsed_uri {
 	const char *pin_source;
 
 	struct key_value *vendor_qattr;
+	size_t vendor_qattr_len;
 };
 
 struct parsed_uri *parsed_uri_new(const char *uri);
