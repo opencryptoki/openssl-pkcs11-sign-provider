@@ -73,38 +73,82 @@ DISPATCH_STORE_FN(settable_ctx_params, ps_store_settable_ctx_params);
 static void *ps_store_open(void *vpctx, const char *uri)
 {
 	struct provider_ctx *provctx = (struct provider_ctx *)vpctx;
+	struct dbg *dbg = &provctx->dbg;
 	struct store_ctx *sctx;
+
+	if (!provctx || !uri)
+		return NULL;
+
+	ps_dbg_debug(dbg, "entry: provctx: %p",
+		     provctx);
 
 	sctx = store_ctx_init(provctx, uri);
 	if (!sctx)
 		return NULL;
 
+	ps_dbg_debug(dbg, "exit: sctx: %p, provctx: %p",
+		     sctx, provctx);
+
 	return sctx;
 }
 
-static void *ps_store_attach(void *pctx, OSSL_CORE_BIO *in)
+static void *ps_store_attach(void *vctx,
+			     OSSL_CORE_BIO *in __attribute__((unused)))
 {
+	struct store_ctx *sctx = (struct store_ctx *)vctx;
+	struct dbg *dbg = &sctx->provctx->dbg;
+
+	if (!sctx)
+		return OSSL_RV_ERR;
+
+	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
+		     sctx, sctx->provctx);
 	return NULL;
 }
 
-static int ps_store_load(void *pctx, OSSL_CALLBACK *object_cb,
-			 void *object_cbarg, OSSL_PASSPHRASE_CALLBACK *pw_cb,
-			 void *pw_cbarg)
+static int ps_store_load(void *vctx,
+			 OSSL_CALLBACK *object_cb __attribute__((unused)),
+			 void *object_cbarg __attribute__((unused)),
+			 OSSL_PASSPHRASE_CALLBACK *pw_cb __attribute__((unused)),
+			 void *pw_cbarg __attribute__((unused)))
 {
+	struct store_ctx *sctx = (struct store_ctx *)vctx;
+	struct dbg *dbg = &sctx->provctx->dbg;
+
+	if (!sctx)
+		return OSSL_RV_ERR;
+
+	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
+		     sctx, sctx->provctx);
+
 	return OSSL_RV_ERR;
 }
 
-static int ps_store_eof(void *pctx)
+static int ps_store_eof(void *vctx)
 {
+	struct store_ctx *sctx = (struct store_ctx *)vctx;
+	struct dbg *dbg = &sctx->provctx->dbg;
+
+	if (!sctx)
+		return OSSL_RV_ERR;
+
+	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
+		     sctx, sctx->provctx);
+
 	return OSSL_RV_ERR;
 }
 
 static int ps_store_close(void *vctx)
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
+	struct dbg *dbg;
 
 	if (!sctx)
 		return OSSL_RV_ERR;
+	dbg = &sctx->provctx->dbg;
+
+	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
+		     sctx, sctx->provctx);
 
 	ps_store_ctx_free(sctx);
 
@@ -120,19 +164,19 @@ static int ps_store_export_object(void *loaderctx, const void *reference,
 
 static const OSSL_PARAM *ps_store_settable_ctx_params(void *provctx)
 {
-    static const OSSL_PARAM known_settable_ctx_params[] = {
-        OSSL_PARAM_int(OSSL_STORE_PARAM_EXPECT, NULL),
-        OSSL_PARAM_octet_string(OSSL_STORE_PARAM_SUBJECT, NULL, 0),
-        OSSL_PARAM_octet_string(OSSL_STORE_PARAM_ISSUER, NULL, 0),
-        OSSL_PARAM_BN(OSSL_STORE_PARAM_SERIAL, NULL, 0),
-        OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_DIGEST, NULL, 0),
-        OSSL_PARAM_octet_string(OSSL_STORE_PARAM_FINGERPRINT, NULL, 0),
-        OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_ALIAS, NULL, 0),
-        OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_PROPERTIES, NULL, 0),
-        OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_INPUT_TYPE, NULL, 0),
-        OSSL_PARAM_END,
-    };
-    return known_settable_ctx_params;
+	static const OSSL_PARAM known_settable_ctx_params[] = {
+		OSSL_PARAM_int(OSSL_STORE_PARAM_EXPECT, NULL),
+		OSSL_PARAM_octet_string(OSSL_STORE_PARAM_SUBJECT, NULL, 0),
+		OSSL_PARAM_octet_string(OSSL_STORE_PARAM_ISSUER, NULL, 0),
+		OSSL_PARAM_BN(OSSL_STORE_PARAM_SERIAL, NULL, 0),
+		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_DIGEST, NULL, 0),
+		OSSL_PARAM_octet_string(OSSL_STORE_PARAM_FINGERPRINT, NULL, 0),
+		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_ALIAS, NULL, 0),
+		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_PROPERTIES, NULL, 0),
+		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_INPUT_TYPE, NULL, 0),
+		OSSL_PARAM_END,
+	};
+	return known_settable_ctx_params;
 }
 
 static int ps_store_set_ctx_params(void *pctx, const OSSL_PARAM params[])
