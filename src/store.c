@@ -14,8 +14,9 @@
 #include "uri.h"
 
 struct store_ctx {
-	struct prov_ctx *provctx;
+	struct provider_ctx *provctx;
 	struct parsed_uri *puri;
+	struct pkcs11_module *pkcs11;
 };
 
 static void ps_store_ctx_free(struct store_ctx *sctx)
@@ -29,27 +30,31 @@ static void ps_store_ctx_free(struct store_ctx *sctx)
 	OPENSSL_free(sctx);
 }
 
-static struct store_ctx *ps_store_ctx_init(void *vpctx, const char *uri)
+static struct store_ctx *store_ctx_init(struct provider_ctx *provctx,
+					   const char *uri)
 {
 	struct store_ctx *sctx;
-
-	if (!vpctx || !uri)
-		return NULL;
 
 	sctx = OPENSSL_zalloc(sizeof(struct store_ctx));
 	if (!sctx)
 		return NULL;
 
-	sctx->puri = parsed_uri_new(uri);
-	if (!sctx->puri)
-		goto err;
 
-	sctx->provctx = vpctx;
+	sctx->puri = parsed_uri_new(uri);
+	if (!sctx->puri) {
+		ps_dbg_error(&provctx->dbg, "parsed_uri_new() failed. uri: %s",
+			     uri);
+		ps_store_ctx_free(sctx);
+		return NULL;
+	}
+
+	sctx->provctx = provctx;
+
+	/* TODO load pkcs11-module from uri */
+	if (!sctx->pkcs11)
+		sctx->pkcs11 = &provctx->pkcs11;
 
 	return sctx;
-err:
-	ps_store_ctx_free(sctx);
-	return NULL;
 }
 
 #define DISPATCH_STORE_FN(tname, name) DECL_DISPATCH_FUNC(store, tname, name)
@@ -67,9 +72,10 @@ DISPATCH_STORE_FN(settable_ctx_params, ps_store_settable_ctx_params);
 
 static void *ps_store_open(void *vpctx, const char *uri)
 {
+	struct provider_ctx *provctx = (struct provider_ctx *)vpctx;
 	struct store_ctx *sctx;
 
-	sctx = ps_store_ctx_init(vpctx, uri);
+	sctx = store_ctx_init(provctx, uri);
 	if (!sctx)
 		return NULL;
 
