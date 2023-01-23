@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -22,6 +22,32 @@ struct store_ctx {
 	CK_OBJECT_HANDLE_PTR objects;
 	CK_ULONG nobjects;
 };
+
+static int handle_pkcs11_module(struct store_ctx *sctx)
+{
+	struct dbg *dbg = &sctx->provctx->dbg;
+	struct parsed_uri *puri = sctx->puri;
+
+	if (puri->mod_path) {
+		/* TODO handle module-path correctly */
+		ps_dbg_warn(dbg, "sctx: %p, ignore URI parameter module-path: %s",
+			    sctx, puri->mod_path);
+	}
+
+	if (puri->mod_name) {
+		/* TODO handle module-name correctly */
+		ps_dbg_warn(dbg, "sctx: %p, ignore URI parameter module-name: %s",
+			    sctx, puri->mod_name);
+	}
+
+	if (!sctx->pkcs11) {
+		sctx->pkcs11 = &sctx->provctx->pkcs11;
+	}
+
+	ps_dbg_info(dbg, "sctx: %p, use pkcs11-module %s",
+		    sctx, sctx->pkcs11->soname);
+	return 0;
+}
 
 static bool match_token_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 			    struct parsed_uri *puri)
@@ -216,26 +242,29 @@ static void ps_store_ctx_free(struct store_ctx *sctx)
 static struct store_ctx *store_ctx_init(struct provider_ctx *provctx,
 					   const char *uri)
 {
+	struct dbg *dbg = &provctx->dbg;
 	struct store_ctx *sctx;
 
 	sctx = OPENSSL_zalloc(sizeof(struct store_ctx));
 	if (!sctx)
 		return NULL;
 
-
 	sctx->puri = parsed_uri_new(uri);
 	if (!sctx->puri) {
-		ps_dbg_error(&provctx->dbg, "parsed_uri_new() failed. uri: %s",
-			     uri);
+		ps_dbg_error(dbg, "provctx: %p, parsed_uri_new() failed. uri: %s",
+			     provctx, uri);
 		ps_store_ctx_free(sctx);
 		return NULL;
 	}
 
 	sctx->provctx = provctx;
 
-	/* TODO load pkcs11-module from uri */
-	if (!sctx->pkcs11)
-		sctx->pkcs11 = &provctx->pkcs11;
+	if (handle_pkcs11_module(sctx)) {
+		ps_dbg_error(dbg, "provctx: %p, pkcs11 module handling failed. uri: %s",
+			     provctx, uri);
+		ps_store_ctx_free(sctx);
+		return NULL;
+	}
 
 	sctx->slot_id = CK_UNAVAILABLE_INFORMATION;
 
