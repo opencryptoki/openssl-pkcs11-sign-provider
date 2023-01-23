@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <openssl/err.h>
 #include <openssl/store.h>
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
 
 static void info(void)
@@ -15,6 +16,9 @@ static void info(void)
 	fprintf(stderr, "Package Version %s, Author: %s\n",
 		PACKAGE_VERSION, PACKAGE_AUTHOR);
 }
+#else
+static void info(void) {}
+#endif
 
 int main(void)
 {
