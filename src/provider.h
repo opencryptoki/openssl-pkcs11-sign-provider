@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,7 +21,7 @@ struct provider_ctx {
 	struct dbg dbg;
 	struct ossl_core core;
 	struct ossl_provider fwd;
-	struct pkcs11_module pkcs11;
+	struct pkcs11_module *pkcs11;
 };
 
 #endif /* _PKCS11SIGN_PROVIDER_H */

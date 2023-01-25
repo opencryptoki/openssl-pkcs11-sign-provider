@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  * Authors: Holger Dengler <dengler@linux.ibm.com>
  *          Ingo Franzki <ifranzki@linux.ibm.com>
@@ -4430,7 +4430,9 @@ static void ps_prov_teardown(void *vpctx)
 	if (!pctx)
 		return;
 
-	pkcs11_module_teardown(&pctx->pkcs11);
+	pkcs11_module_free(pctx->pkcs11);
+	pctx->pkcs11 = NULL;
+
 	fwd_teardown(&pctx->fwd);
 	core_teardown(&pctx->core);
 
@@ -4536,13 +4538,13 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 	}
 	ps_dbg_debug(&pctx->dbg, "pctx: %p, forward: %s", pctx, pctx->fwd.name);
 
-	if (pkcs11_module_init(&pctx->pkcs11, module, module_args,
-			       &pctx->dbg) != CKR_OK) {
+	pctx->pkcs11 = pkcs11_module_new(module, module_args, &pctx->dbg);
+	if (!pctx->pkcs11) {
 		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
 			       "Failed to initialize pkcs11 module %s", module);
 		goto err;
 	}
-	ps_dbg_debug(&pctx->dbg, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11.soname);
+	ps_dbg_debug(&pctx->dbg, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11->soname);
 
 	*vctx = pctx;
 	*out = ps_dispatch_table;

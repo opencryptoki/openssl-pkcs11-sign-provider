@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -264,7 +264,7 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 }
 
-void pkcs11_module_teardown(struct pkcs11_module *pkcs)
+static void module_teardown(struct pkcs11_module *pkcs)
 {
 	if (!pkcs)
 		return;
@@ -288,35 +288,58 @@ void pkcs11_module_teardown(struct pkcs11_module *pkcs)
 	pkcs->state = PKCS11_UNINITIALIZED;
 }
 
+void pkcs11_module_free(struct pkcs11_module *pkcs)
+{
+	if (!pkcs)
+		return;
+
+	if (__atomic_sub_fetch(&pkcs->refcnt, 1, __ATOMIC_SEQ_CST))
+		return;
+
+	module_teardown(pkcs);
+	OPENSSL_free(pkcs);
+}
+
+struct pkcs11_module *pkcs11_module_get(struct pkcs11_module *pkcs)
+{
+	if (!pkcs)
+		return NULL;
+
+	__atomic_fetch_add(&pkcs->refcnt, 1, __ATOMIC_SEQ_CST);
+	return pkcs;
+}
+
 #if !defined(RTLD_DEEPBIND)
 #define RTLD_DEEPBIND 0
 #endif
 
-CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
-			 const char *module,
-			 const char *module_initargs,
-			 struct dbg *dbg)
+struct pkcs11_module *pkcs11_module_new(const char *module,
+					const char *module_initargs,
+					struct dbg *dbg)
 {
 	CK_RV (*c_get_function_list)(CK_FUNCTION_LIST_PTR_PTR);
 	CK_C_INITIALIZE_ARGS args = {
 		.flags = CKF_OS_LOCKING_OK,
 		.pReserved = (void *)module_initargs,
 	};
-	CK_RV ck_rv = CKR_GENERAL_ERROR;
+	CK_RV ck_rv;
+	char *err;
+	struct pkcs11_module *pkcs;
 
+	if (!module || !dbg)
+		return NULL;
+
+	pkcs = OPENSSL_zalloc(sizeof(struct pkcs11_module));
 	if (!pkcs)
-		return CKR_ARGUMENTS_BAD;
+		return NULL;
 
-	/* TODO handle empty module */
-	if (!module)
-		return CKR_ARGUMENTS_BAD;
 	pkcs->soname = OPENSSL_strdup(module);
 
 	dlerror();
 	pkcs->dlhandle = dlopen(module,
 				RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
 	if (!pkcs->dlhandle) {
-		char *err = dlerror();
+		err = dlerror();
 		ps_dbg_error(dbg, "%s: dlopen() failed: %s",
 			     pkcs->soname, err);
 		goto err;
@@ -324,7 +347,7 @@ CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
 
 	c_get_function_list = dlsym(pkcs->dlhandle, "C_GetFunctionList");
 	if (!c_get_function_list) {
-		char *err = dlerror();
+		err = dlerror();
 		ps_dbg_error(dbg, "%s: dlsym() failed: %s",
 			     pkcs->soname, err);
 		goto close_err;
@@ -347,16 +370,12 @@ CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
 	pkcs->state = PKCS11_INITIALIZED;
 	module_info(pkcs, dbg);
 
-	return CKR_OK;
+	return pkcs11_module_get(pkcs);
 
 close_err:
 	dlclose(pkcs->dlhandle);
 err:
 	OPENSSL_free(pkcs->soname);
-
-	pkcs->soname = NULL;
-	pkcs->dlhandle = NULL;
-	pkcs->fns = NULL;
-
-	return ck_rv;
+	OPENSSL_free(pkcs);
+	return NULL;
 }

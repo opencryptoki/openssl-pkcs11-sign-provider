@@ -41,7 +41,7 @@ static int handle_pkcs11_module(struct store_ctx *sctx)
 	}
 
 	if (!sctx->pkcs11) {
-		sctx->pkcs11 = &sctx->provctx->pkcs11;
+		sctx->pkcs11 = pkcs11_module_get(sctx->provctx->pkcs11);
 	}
 
 	ps_dbg_info(dbg, "sctx: %p, use pkcs11-module %s",
@@ -235,6 +235,7 @@ static void ps_store_ctx_free(struct store_ctx *sctx)
 
 	sctx->provctx = NULL;
 
+	pkcs11_module_free(sctx->pkcs11);
 	parsed_uri_free(sctx->puri);
 	OPENSSL_free(sctx);
 }
@@ -369,7 +370,7 @@ static int ps_store_close(void *vctx)
 	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
 		     sctx, sctx->provctx);
 
-	pkcs11_session_close(&sctx->provctx->pkcs11, &sctx->session, dbg);
+	pkcs11_session_close(sctx->pkcs11, &sctx->session, dbg);
 
 	ps_store_ctx_free(sctx);
 

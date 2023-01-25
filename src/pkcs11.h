@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,6 +16,7 @@ struct pkcs11_module {
 		PKCS11_UNINITIALIZED = 0,
 		PKCS11_INITIALIZED,
 	} state;
+	unsigned int refcnt;
 };
 
 size_t pkcs11_strlen(const CK_CHAR_PTR c, CK_ULONG csize);
@@ -36,10 +37,10 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs,
 		       CK_SLOT_ID_PTR *slots, CK_ULONG *nslots,
 		       struct dbg *dbg);
 
-void pkcs11_module_teardown(struct pkcs11_module *pkcs);
-CK_RV pkcs11_module_init(struct pkcs11_module *pkcs,
-			 const char *module,
-			 const char *module_initargs,
-			 struct dbg *dbg);
+void pkcs11_module_free(struct pkcs11_module *pkcs);
+struct pkcs11_module *pkcs11_module_get(struct pkcs11_module *pkcs);
+struct pkcs11_module *pkcs11_module_new(const char *module,
+					const char *module_initargs,
+					struct dbg *dbg);
 
 #endif /* _PKCS11SIGN_PKCS11_H */
