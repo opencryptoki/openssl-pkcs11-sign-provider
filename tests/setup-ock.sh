@@ -46,19 +46,41 @@ PIN_SOURCE=${TMPPDIR}/pinfile.txt
 printf "%s" "${OCK_USER_PIN}" > ${PIN_SOURCE} \
 || exit 99
 
-echo "## Generate EC Key (if required)"
-URI_KEY_ECDSA="pkcs11:token=${OCK_TOKEN};object=test_ec_secp256r1"
+#######################################
+echo "## Generate CA key/cert and server key/cert"
+LABEL="test_ec_secp384r1"
+FILE_PEM_CA_PRV="${TMPPDIR}/ca_key.prv"
+FILE_PEM_CA_CRT="${TMPPDIR}/ca_cert.crt"
+FILE_PEM_ECDSA_PRV="${TMPPDIR}/${LABEL}_key.prv"
+FILE_PEM_ECDSA_PUB="${TMPPDIR}/${LABEL}_key.pub"
+FILE_PEM_ECDSA_CRT="${TMPPDIR}/${LABEL}_cert.crt"
+generate_ec_tls_certificates \
+	${FILE_PEM_CA_PRV} ${FILE_PEM_CA_CRT} \
+	${FILE_PEM_ECDSA_PRV} ${FILE_PEM_ECDSA_PUB} ${FILE_PEM_ECDSA_CRT}
+
+#######################################
+echo "## Re-import server keys"
+URI_TOKEN="pkcs11:token=${OCK_TOKEN}"
+URI_KEY_ECDSA="${URI_TOKEN};object=${LABEL}"
 URI_KEY_ECDSA_PRV="${URI_KEY_ECDSA};type=private"
 URI_KEY_ECDSA_PUB="${URI_KEY_ECDSA};type=public"
-GNUTLS_PIN=${OCK_USER_PIN} \
-${P11TOOL} --list-all \
-	   "${URI_KEY_ECDSA}" 2> /dev/null || \
-GNUTLS_PIN=${OCK_USER_PIN} \
-${P11TOOL} --generate-privkey ecc \
-	   --curve "secp256r1" \
-	   --label "test_ec_secp256r1" \
-	   "pkcs11:token=${OCK_TOKEN}" || \
-exit 99
+
+GNUTLS_PIN=${OCK_USER_PIN}			\
+${P11TOOL} --delete				\
+	   "${URI_KEY_ECDSA}" 2> /dev/null
+
+GNUTLS_PIN=${OCK_USER_PIN}			\
+${P11TOOL} --write --label ${LABEL}		\
+	   --mark-private			\
+	   --load-privkey=${FILE_PEM_ECDSA_PRV}	\
+	   "${URI_TOKEN}" 2> /dev/null		\
+|| exit 99
+
+GNUTLS_PIN=${OCK_USER_PIN}			\
+${P11TOOL} --write --label ${LABEL}		\
+	   --load-pubkey=${FILE_PEM_ECDSA_PUB}	\
+	   "${URI_TOKEN}" 2> /dev/null		\
+|| exit 99
 
 #######################################
 echo "## Generate openssl config file"
@@ -76,6 +98,11 @@ export TESTSDIR="${TESTSDIR}"
 export TMPPDIR="${BASEDIR}/${TMPPDIR}"
 export OPENSSL_CONF="${BASEDIR}/${OPENSSL_CONF}"
 export PIN_SOURCE=${BASEDIR}/${PIN_SOURCE}
+export FILE_PEM_CA_PRV="${BASEDIR}/${FILE_PEM_CA_PRV}"
+export FILE_PEM_CA_CRT="${BASEDIR}/${FILE_PEM_CA_CRT}"
+export FILE_PEM_ECDSA_PRV="${BASEDIR}/${FILE_PEM_ECDSA_PRV}"
+export FILE_PEM_ECDSA_PUB="${BASEDIR}/${FILE_PEM_ECDSA_PUB}"
+export FILE_PEM_ECDSA_CRT="${BASEDIR}/${FILE_PEM_ECDSA_CRT}"
 export URI_KEY_ECDSA="${URI_KEY_ECDSA}?pin-source=${BASEDIR}/${PIN_SOURCE}"
 export URI_KEY_ECDSA_PRV="${URI_KEY_ECDSA_PRV}?pin-source=${BASEDIR}/${PIN_SOURCE}"
 export URI_KEY_ECDSA_PUB="${URI_KEY_ECDSA_PUB}?pin-source=${BASEDIR}/${PIN_SOURCE}"
