@@ -277,7 +277,6 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *provctx,
 	{ OSSL_FUNC_STORE_##NAME, (void (*)(void))name }
 
 DISPATCH_STORE_FN(open, ps_store_open);
-DISPATCH_STORE_FN(attach, ps_store_attach);
 DISPATCH_STORE_FN(load, ps_store_load);
 DISPATCH_STORE_FN(eof, ps_store_eof);
 DISPATCH_STORE_FN(close, ps_store_close);
@@ -310,20 +309,6 @@ static void *ps_store_open(void *vpctx, const char *uri)
 		     sctx, provctx);
 
 	return sctx;
-}
-
-static void *ps_store_attach(void *vctx,
-			     OSSL_CORE_BIO *in __attribute__((unused)))
-{
-	struct store_ctx *sctx = (struct store_ctx *)vctx;
-	struct dbg *dbg = &sctx->provctx->dbg;
-
-	if (!sctx)
-		return OSSL_RV_ERR;
-
-	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
-		     sctx, sctx->provctx);
-	return NULL;
 }
 
 static int ps_store_load(void *vctx,
@@ -408,7 +393,6 @@ static int ps_store_set_ctx_params(void *pctx, const OSSL_PARAM params[])
 
 static const OSSL_DISPATCH ps_store_funcs[] = {
 	DISPATCH_STORE_ELEM(OPEN, ps_store_open),
-	DISPATCH_STORE_ELEM(ATTACH, ps_store_attach),
 	DISPATCH_STORE_ELEM(LOAD, ps_store_load),
 	DISPATCH_STORE_ELEM(EOF, ps_store_eof),
 	DISPATCH_STORE_ELEM(CLOSE, ps_store_close),
