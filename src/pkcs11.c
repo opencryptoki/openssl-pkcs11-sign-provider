@@ -108,6 +108,64 @@ int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize)
 	return strncmp(s, (const char *)c, pkcs11_strlen(c, csize));
 }
 
+CK_RV pkcs11_object_attributes(struct pkcs11_module *pkcs11,
+			       CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
+			       CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
+			       struct dbg *dbg)
+{
+	CK_ATTRIBUTE template[] = {
+		{ .type = CKA_LABEL },
+		{ .type = CKA_ID },
+		{ .type = CKA_CLASS },
+		{ .type = CKA_KEY_TYPE },
+	};
+	CK_ULONG nattrs = sizeof(template) / sizeof(template[0]);
+	CK_ULONG i;
+	CK_ATTRIBUTE_PTR attrs;
+	CK_RV rv;
+
+	if (!pkcs11 || !dbg || !attributes ||
+	    (session == CK_INVALID_HANDLE))
+		return CKR_ARGUMENTS_BAD;
+
+	rv = pkcs11->fns->C_GetAttributeValue(session, ohandle,
+					      template, nattrs);
+	if (rv != CKR_OK) {
+		return rv;
+	}
+
+	for (i = 0; i < nattrs; i++) {
+		template[i].pValue = OPENSSL_zalloc(template[i].ulValueLen);
+		if (!template[i].pValue) {
+			rv = CKR_HOST_MEMORY;
+			goto err;
+		}
+	}
+
+	rv = pkcs11->fns->C_GetAttributeValue(session, ohandle,
+					      template, nattrs);
+	if (rv != CKR_OK) {
+		goto err;
+	}
+
+	attrs = OPENSSL_memdup(template, sizeof(template));
+	if (!attrs) {
+		rv = CKR_HOST_MEMORY;
+		goto err;
+	}
+
+	*attributes = attrs;
+	*nattributes = nattrs;
+
+	return CKR_OK;
+
+err:
+	for (i = 0; i < nattrs; i++) {
+		OPENSSL_free(template[i].pValue);
+	}
+	return rv;
+}
+
 CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 			  CK_SESSION_HANDLE session,
 			  const char *label, const char *id, const char *type,
@@ -243,7 +301,7 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 		return ck_rv;
 	}
 
-	sl = malloc(nsl);
+	sl = OPENSSL_malloc(nsl);
 	if (!sl) {
 		ps_dbg_error(dbg, "%s: slot-list allocation failed: nsl = %lu",
 			     pkcs11->soname, nsl);
@@ -254,7 +312,7 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_GetSlotList(NULL) failed: %d",
 			     pkcs11->soname, ck_rv);
-		free(sl);
+		OPENSSL_free(sl);
 		return ck_rv;
 	}
 
