@@ -318,12 +318,13 @@ static int ps_store_load(void *vctx,
 			 void *pw_cbarg __attribute__((unused)))
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
-	struct dbg *dbg = &sctx->provctx->dbg;
+	struct dbg *dbg;
 
 	if (!sctx)
 		return OSSL_RV_ERR;
+	dbg = &sctx->provctx->dbg;
 
-	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
+	ps_dbg_debug(dbg, "sctx: %p, provctx: %p, entry",
 		     sctx, sctx->provctx);
 
 	return OSSL_RV_ERR;
@@ -332,12 +333,13 @@ static int ps_store_load(void *vctx,
 static int ps_store_eof(void *vctx)
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
-	struct dbg *dbg = &sctx->provctx->dbg;
+	struct dbg *dbg;
 
 	if (!sctx)
-		return OSSL_RV_ERR;
+		return 1;
+	dbg = &sctx->provctx->dbg;
 
-	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
+	ps_dbg_debug(dbg, "sctx: %p, provctx: %p, entry",
 		     sctx, sctx->provctx);
 
 	return OSSL_RV_ERR;
