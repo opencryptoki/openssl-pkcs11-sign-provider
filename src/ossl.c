@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,7 @@
 #include <openssl/core_names.h>
 
 #include "ossl.h"
+#include "debug.h"
 
 void ossl_put_error(struct ossl_core *core, int err,
 		      const char *file, int line, const char *func,

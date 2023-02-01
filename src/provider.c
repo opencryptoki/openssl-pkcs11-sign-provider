@@ -35,6 +35,9 @@
 
 static OSSL_PROVIDER *pkcs11sign_provider;
 
+#define PS_PROV_DESCRIPTION	"PKCS11 signing key provider"
+#define PS_PROV_VERSION		"0.1"
+
 #define PS_PROV_RSA_DEFAULT_MD			"SHA-1"
 #define PS_PROV_PKEY_PARAM_SK_BLOB		"ps-blob"
 #define PS_PROV_PKEY_PARAM_SK_FUNCS		"ps-funcs"

@@ -8,16 +8,7 @@
 
 #include <opencryptoki/pkcs11.h>
 
-struct pkcs11_module {
-	char *soname;
-	void *dlhandle;
-	CK_FUNCTION_LIST *fns;
-	enum PKCS11_STATE {
-		PKCS11_UNINITIALIZED = 0,
-		PKCS11_INITIALIZED,
-	} state;
-	unsigned int refcnt;
-};
+#include "common.h"
 
 size_t pkcs11_strlen(const CK_CHAR_PTR c, CK_ULONG csize);
 int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize);

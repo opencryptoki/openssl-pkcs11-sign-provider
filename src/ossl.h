@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,7 +13,6 @@
 #include <openssl/types.h>
 
 #include "common.h"
-#include "debug.h"
 
 #define put_error_pctx(pctx, err, fmt...)			\
 	do {							\
@@ -26,24 +25,6 @@
 	put_error_pctx(key->pctx, err, fmt)
 #define put_error_op_ctx(opctx, err, fmt...)			\
 	put_error_pctx(opctx->pctx, err, fmt)
-
-struct ossl_provider {
-	const char *name;
-	OSSL_PROVIDER *provider;
-	void *ctx;
-	const OSSL_ALGORITHM *alg_cache[OSSL_OP__HIGHEST];
-};
-
-struct ossl_core {
-	const OSSL_CORE_HANDLE *handle;
-	OSSL_LIB_CTX *libctx;
-	struct {
-		OSSL_FUNC_core_get_params_fn *get_params;
-		OSSL_FUNC_core_set_error_debug_fn *set_error_debug;
-		OSSL_FUNC_core_vset_error_fn *vset_error;
-		OSSL_FUNC_core_new_error_fn *new_error;
-	} fns;
-};
 
 void ossl_put_error(struct ossl_core *core, int err,
 		    const char *file, int line, const char *func,

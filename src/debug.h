@@ -1,5 +1,5 @@
 /*
- * Copyright (C) IBM Corp. 2022
+ * Copyright (C) IBM Corp. 2022, 2023
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,15 +9,12 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
+#include "common.h"
+
 #define DBG_ERROR	(0)
 #define DBG_WARN	(1)
 #define DBG_INFO	(2)
 #define DBG_DEBUG	(3)
-
-struct dbg {
-	FILE *stream;
-	unsigned int level;
-};
 
 inline bool ps_dbg_enabled(struct dbg *dbg)
 {
