@@ -19,6 +19,8 @@
 #include "pkcs11.h"
 #include "store.h"
 #include "debug.h"
+#include "object.h"
+#include "keymgmt.h"
 
 /*
  * This source file is only used with OpenSSL >= 3.0
@@ -47,24 +49,13 @@ static OSSL_PROVIDER *pkcs11sign_provider;
 #define PS_PKCS11_MODULE_INIT_ARGS		"pkcs11sign-module-init-args"
 #define PS_PKCS11_FWD				"pkcs11sign-forward"
 
-struct ps_key {
-	struct provider_ctx *pctx;
-	int type; /* EVP_PKEY_xxx types */
-	void *fwd_key; /* shadow key of default provider */
-	unsigned char *secure_key;
-	size_t secure_key_size;
-	struct ps_funcs *funcs;
-	void *private;
-	unsigned int ref_count;
-};
-
 struct ps_op_ctx {
 	struct provider_ctx *pctx;
 	int type; /* EVP_PKEY_xxx types */
 	const char *propq;
 	void *fwd_op_ctx; /* shadow context of default provider */
 	void (*fwd_op_ctx_free)(void *fwd_op_ctx);
-	struct ps_key *key;
+	struct obj *key;
 	int operation;
 	OSSL_FUNC_signature_sign_fn *sign_fn;
 	EVP_MD_CTX *mdctx;
@@ -118,44 +109,6 @@ DISPATCH_PROVIDER_FN(get_params, 		ps_prov_get_params);
 DISPATCH_PROVIDER_FN(query_operation, 		ps_prov_query_operation);
 DISPATCH_PROVIDER_FN(get_reason_strings, 	ps_prov_get_reason_strings);
 DISPATCH_PROVIDER_FN(get_capabilities, 		ps_prov_get_capabilities);
-
-#define DISPATCH_KEYMGMT_FN(tname, name) DECL_DISPATCH_FUNC(keymgmt, tname, name)
-DISPATCH_KEYMGMT_FN(free, 			ps_keymgmt_free);
-DISPATCH_KEYMGMT_FN(gen_cleanup, 		ps_keymgmt_gen_cleanup);
-DISPATCH_KEYMGMT_FN(load, 			ps_keymgmt_load);
-DISPATCH_KEYMGMT_FN(gen_set_template, 		ps_keymgmt_gen_set_template);
-DISPATCH_KEYMGMT_FN(gen_set_params, 		ps_keymgmt_gen_set_params);
-DISPATCH_KEYMGMT_FN(gen, 			ps_keymgmt_gen);
-DISPATCH_KEYMGMT_FN(get_params, 		ps_keymgmt_get_params);
-DISPATCH_KEYMGMT_FN(set_params, 		ps_keymgmt_set_params);
-DISPATCH_KEYMGMT_FN(has, 			ps_keymgmt_has);
-DISPATCH_KEYMGMT_FN(match, 			ps_keymgmt_match);
-DISPATCH_KEYMGMT_FN(validate, 			ps_keymgmt_validate);
-DISPATCH_KEYMGMT_FN(export, 			ps_keymgmt_export);
-DISPATCH_KEYMGMT_FN(import, 			ps_keymgmt_import);
-DISPATCH_KEYMGMT_FN(new, 			ps_keymgmt_rsa_new);
-DISPATCH_KEYMGMT_FN(new, 			ps_keymgmt_rsa_pss_new);
-DISPATCH_KEYMGMT_FN(new, 			ps_keymgmt_ec_new);
-DISPATCH_KEYMGMT_FN(gen_init, 			ps_keymgmt_rsa_gen_init);
-DISPATCH_KEYMGMT_FN(gen_init, 			ps_keymgmt_rsa_pss_gen_init);
-DISPATCH_KEYMGMT_FN(gen_init, 			ps_keymgmt_ec_gen_init);
-DISPATCH_KEYMGMT_FN(gen_settable_params, 	ps_keymgmt_rsa_gen_settable_params);
-DISPATCH_KEYMGMT_FN(gen_settable_params, 	ps_keymgmt_rsa_pss_gen_settable_params);
-DISPATCH_KEYMGMT_FN(gen_settable_params, 	ps_keymgmt_ec_gen_settable_params);
-DISPATCH_KEYMGMT_FN(gettable_params, 		ps_keymgmt_rsa_gettable_params);
-DISPATCH_KEYMGMT_FN(gettable_params, 		ps_keymgmt_rsa_pss_gettable_params);
-DISPATCH_KEYMGMT_FN(gettable_params, 		ps_keymgmt_ec_gettable_params);
-DISPATCH_KEYMGMT_FN(settable_params, 		ps_keymgmt_rsa_settable_params);
-DISPATCH_KEYMGMT_FN(settable_params, 		ps_keymgmt_rsa_pss_settable_params);
-DISPATCH_KEYMGMT_FN(settable_params, 		ps_keymgmt_ec_settable_params);
-DISPATCH_KEYMGMT_FN(export_types, 		ps_keymgmt_rsa_export_types);
-DISPATCH_KEYMGMT_FN(export_types, 		ps_keymgmt_rsa_pss_export_types);
-DISPATCH_KEYMGMT_FN(export_types, 		ps_keymgmt_ec_export_types);
-DISPATCH_KEYMGMT_FN(import_types, 		ps_keymgmt_rsa_import_types);
-DISPATCH_KEYMGMT_FN(import_types, 		ps_keymgmt_rsa_pss_import_types);
-DISPATCH_KEYMGMT_FN(import_types, 		ps_keymgmt_ec_import_types);
-DISPATCH_KEYMGMT_FN(query_operation_name, 	ps_keymgmt_rsa_query_operation_name);
-DISPATCH_KEYMGMT_FN(query_operation_name, 	ps_keymgmt_ec_query_operation_name);
 
 #define DISPATCH_KEYEXCH_FN(tname, name) DECL_DISPATCH_FUNC(keyexch, tname, name)
 DISPATCH_KEYEXCH_FN(newctx, ps_keyexch_ec_newctx);
@@ -213,10 +166,11 @@ DISPATCH_ASYMCIPHER(settable_ctx_params, ps_asym_settable_ctx_params);
 
 DISPATCH_ASYMCIPHER(freectx, ps_op_freectx);
 
-static void ps_keymgmt_upref(struct ps_key *key);
-static struct ps_key *ps_keymgmt_new(struct provider_ctx *pctx,
-					       int type);
-static int ps_keymgmt_get_bits(struct ps_key *key);
+static int ps_get_bits(struct obj *key)
+{
+	/* dummy */
+	return 0;
+}
 
 /* --- provider START --- */
 static void provider_ctx_teardown(struct provider_ctx *pctx)
@@ -303,7 +257,7 @@ static void ps_op_freectx(void *vopctx)
 		opctx->fwd_op_ctx_free(opctx->fwd_op_ctx);
 
 	if (opctx->key)
-		ps_keymgmt_free(opctx->key);
+		obj_free(opctx->key);
 
 	if (opctx->propq)
 		OPENSSL_free((void *)opctx->propq);
@@ -359,14 +313,14 @@ static struct ps_op_ctx *ps_op_dupctx(struct ps_op_ctx *opctx)
 
 	if (opctx->key) {
 		new_opctx->key = opctx->key;
-		ps_keymgmt_upref(opctx->key);
+		obj_get(opctx->key);
 	}
 
 	ps_opctx_debug(opctx, "new_opctx: %p", new_opctx);
 	return new_opctx;
 }
 
-static int ps_op_init(struct ps_op_ctx *ctx, struct ps_key *key,
+static int ps_op_init(struct ps_op_ctx *ctx, struct obj *key,
 			   int operation)
 {
 	if (ctx == NULL)
@@ -409,10 +363,10 @@ static int ps_op_init(struct ps_op_ctx *ctx, struct ps_key *key,
 	}
 
 	if (key != NULL)
-		ps_keymgmt_upref(key);
+		obj_get(key);
 
 	if (ctx->key != NULL)
-		ps_keymgmt_free(ctx->key);
+		obj_free(ctx->key);
 
 	ctx->key = key;
 	ctx->operation = operation;
@@ -788,7 +742,7 @@ static int ps_asym_op_encrypt_init(void *vctx, void *vkey,
 {
 	OSSL_FUNC_asym_cipher_encrypt_init_fn *fwd_encrypt_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -829,7 +783,7 @@ static int ps_asym_op_decrypt_init(void *vctx, void *vkey,
 {
 	OSSL_FUNC_asym_cipher_decrypt_init_fn *fwd_decrypt_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -1380,7 +1334,7 @@ static int ps_signature_op_get_padding(struct ps_op_ctx *ctx)
 }
 
 static int ps_signature_op_get_pss_saltlen(struct ps_op_ctx *ctx,
-					   struct ps_key *key,
+					   struct obj *key,
 					   EVP_MD *mgf_md)
 {
 	char saltlen[50];
@@ -1403,7 +1357,7 @@ static int ps_signature_op_get_pss_saltlen(struct ps_op_ctx *ctx,
 
 	ps_opctx_debug(ctx, "saltlen: %s", saltlen);
 
-	rsa_bits = ps_keymgmt_get_bits(key);
+	rsa_bits = ps_get_bits(key);
 	if (rsa_bits <= 0) {
 		ps_opctx_debug(ctx,
 			"ERROR: ps_keymgmt_get_bits failed");
@@ -1436,7 +1390,7 @@ static int ps_signature_op_sign_init(void *vctx, void *vkey,
 {
 	OSSL_FUNC_signature_sign_init_fn *fwd_sign_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -1477,7 +1431,7 @@ static int ps_signature_op_verify_init(void *vctx, void *vkey,
 {
 	OSSL_FUNC_signature_verify_init_fn *fwd_verify_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -1518,7 +1472,7 @@ static int ps_signature_op_verify_recover_init(void *vctx, void *vkey,
 	OSSL_FUNC_signature_verify_recover_init_fn
 					*fwd_verify_recover_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -1663,7 +1617,7 @@ static int ps_signature_op_verify_recover(void *vctx,
 
 static int ps_signature_op_digest_sign_init(struct ps_op_ctx *opctx,
 					    const char *mdname,
-					    struct ps_key *key,
+					    struct obj *key,
 					    const OSSL_PARAM params[],
 					  OSSL_FUNC_signature_sign_fn *sign_fn)
 {
@@ -1865,7 +1819,7 @@ static int ps_signature_op_digest_verify_init(void *vctx,
 	OSSL_FUNC_signature_digest_verify_init_fn
 					*default_digest_verify_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -1972,1065 +1926,6 @@ static int ps_signature_op_digest_verify_final(void *vctx,
 	return 1;
 }
 
-
-static void ps_keymgmt_upref(struct ps_key *key)
-{
-	ps_key_debug(key, "key: %p", key);
-
-	key->ref_count++;
-
-	ps_key_debug(key, "ref_count: %u", key->ref_count);
-}
-
-static unsigned int ps_keymgmt_downref(struct ps_key *key)
-{
-	ps_key_debug(key, "key: %p ", key);
-
-	if (key->ref_count > 0)
-		key->ref_count--;
-
-	ps_key_debug(key, "ref_count: %u", key->ref_count);
-
-	return key->ref_count;
-}
-
-static struct ps_key *ps_keymgmt_new(struct provider_ctx *pctx,
-					       int type)
-{
-	OSSL_FUNC_keymgmt_new_fn *default_new_fn;
-	struct ps_key *key;
-
-	if (pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p type: %d", pctx,
-		     type);
-
-	default_new_fn = (OSSL_FUNC_keymgmt_new_fn *)
-			fwd_keymgmt_get_func(&pctx->fwd, type,
-					     OSSL_FUNC_KEYMGMT_NEW,
-					     &pctx->dbg);
-	if (default_new_fn == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default new_fn");
-		return NULL;
-	}
-
-	key = OPENSSL_zalloc(sizeof(struct ps_key));
-	if (key == NULL) {
-		put_error_pctx(pctx, PS_ERR_MALLOC_FAILED,
-			       "OPENSSL_zalloc failed");
-		return NULL;
-	}
-
-	key->pctx = pctx;
-	key->type = type;
-
-	key->fwd_key = default_new_fn(pctx->fwd.ctx);
-	if (key->fwd_key == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			       "default_new_fn failed");
-		OPENSSL_free(key);
-		return NULL;
-	}
-
-	ps_keymgmt_upref(key);
-
-	ps_dbg_debug(&pctx->dbg, "key: %p", key);
-
-	return key;
-}
-
-static void ps_keymgmt_free(void *vkey)
-{
-	OSSL_FUNC_keymgmt_free_fn *default_free_fn;
-	struct ps_key *key = vkey;
-
-	if (key == NULL)
-		return;
-
-	ps_key_debug(key, "key: %p", key);
-
-	if (ps_keymgmt_downref(key) > 0)
-		return;
-
-	ps_key_debug(key, "free key: %p", key);
-
-	default_free_fn = (OSSL_FUNC_keymgmt_free_fn *)
-			fwd_keymgmt_get_func(&key->pctx->fwd,
-					key->type, OSSL_FUNC_KEYMGMT_FREE,
-					&key->pctx->dbg);
-	if (default_free_fn == NULL)
-		ps_key_debug(key, "no default free_fn");
-	else
-		default_free_fn(key->fwd_key);
-
-	if (key->secure_key != NULL)
-		OPENSSL_free(key->secure_key);
-	OPENSSL_free(key);
-}
-
-static int ps_keymgmt_match(const void *vkey1, const void *vkey2,
-				 int selection)
-{
-	OSSL_FUNC_keymgmt_match_fn *default_match_fn;
-	const struct ps_key *key1 = vkey1;
-	const struct ps_key *key2 = vkey2;
-
-	if (key1 == NULL || key2 == NULL)
-		return 0;
-
-	ps_key_debug(key1, "key1: %p key2: %p", key1, key2);
-
-	default_match_fn = (OSSL_FUNC_keymgmt_match_fn *)
-			fwd_keymgmt_get_func(&key1->pctx->fwd,
-					key1->type, OSSL_FUNC_KEYMGMT_MATCH,
-					&key1->pctx->dbg);
-	if (default_match_fn == NULL) {
-		put_error_key(key1, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			      "no default match_fn");
-		return 0;
-	}
-
-	if (key1->type != key2->type)
-		return 0;
-
-	if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) {
-		/* match everything except private key */
-		return default_match_fn(key1->fwd_key, key2->fwd_key,
-					selection &
-					    (~OSSL_KEYMGMT_SELECT_PRIVATE_KEY));
-	}
-
-	if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) {
-		if (key1->secure_key_size != key2->secure_key_size)
-			return 0;
-		if (key1->secure_key_size > 0) {
-			if (memcmp(key1->secure_key, key2->secure_key,
-				   key1->secure_key_size) != 0)
-				return 0;
-			selection &= (~OSSL_KEYMGMT_SELECT_PRIVATE_KEY);
-		}
-	}
-
-	return default_match_fn(key1->fwd_key, key2->fwd_key,
-				selection);
-}
-
-static int ps_keymgmt_validate(const void *vkey,
-				    int selection, int checktype)
-{
-	OSSL_FUNC_keymgmt_validate_fn *default_validate_fn;
-	const struct ps_key *key = vkey;
-	int default_selection = selection;
-
-	if (key == NULL)
-		return 0;
-
-	ps_key_debug(key, "key: %p selection: %x checktype: %x", key,
-		     selection, checktype);
-
-	default_validate_fn = (OSSL_FUNC_keymgmt_validate_fn *)
-			fwd_keymgmt_get_func(&key->pctx->fwd,
-					key->type, OSSL_FUNC_KEYMGMT_VALIDATE,
-					&key->pctx->dbg);
-	if (default_validate_fn == NULL) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			      "no default validate_fn");
-		return 0;
-	}
-
-	/* A secure key doesn't have the private parts in the default key */
-	if (key->secure_key != NULL)
-		default_selection &= (~OSSL_KEYMGMT_SELECT_PRIVATE_KEY);
-
-	return default_validate_fn(key->fwd_key, default_selection,
-				   checktype);
-}
-
-static int ps_keymgmt_get_params(void *vkey, OSSL_PARAM params[])
-{
-	OSSL_FUNC_keymgmt_get_params_fn *default_get_params_fn;
-	struct ps_key *key = vkey;
-	OSSL_PARAM *p;
-
-	if (key == NULL)
-		return 0;
-
-	ps_key_debug(key, "key: %p", key);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_key_debug(key, "param: %s", p->key);
-
-	default_get_params_fn = (OSSL_FUNC_keymgmt_get_params_fn *)
-			fwd_keymgmt_get_func(&key->pctx->fwd,
-				key->type, OSSL_FUNC_KEYMGMT_GET_PARAMS,
-				&key->pctx->dbg);
-
-	/* default_get_params_fn is optional */
-	if (default_get_params_fn != NULL) {
-		if (!default_get_params_fn(key->fwd_key, params)) {
-			put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				      "default_get_params_fn failed");
-			return 0;
-		}
-	}
-
-	if (key->secure_key == NULL)
-		return 1;
-
-	p = OSSL_PARAM_locate(params, PS_PROV_PKEY_PARAM_SK_BLOB);
-	if (p != NULL && !OSSL_PARAM_set_octet_string(p, key->secure_key,
-						      key->secure_key_size)) {
-		put_error_key(key, PS_ERR_INTERNAL_ERROR,
-			      "OSSL_PARAM_set_octet_string failed");
-		return 0;
-	}
-	p = OSSL_PARAM_locate(params, PS_PROV_PKEY_PARAM_SK_FUNCS);
-	if (p != NULL && !OSSL_PARAM_set_octet_ptr(p, key->funcs,
-						   sizeof(struct ps_funcs))) {
-		put_error_key(key, PS_ERR_INTERNAL_ERROR,
-			      "OSSL_PARAM_set_octet_ptr failed");
-		return 0;
-	}
-	p = OSSL_PARAM_locate(params, PS_PROV_PKEY_PARAM_SK_PRIVATE);
-	if (p != NULL && !OSSL_PARAM_set_octet_ptr(p, key->private, 0)) {
-		put_error_key(key, PS_ERR_INTERNAL_ERROR,
-			      "OSSL_PARAM_set_octet_ptr failed");
-		return 0;
-	}
-
-	return 1;
-}
-
-
-static int ps_keymgmt_set_params(void *vkey, const OSSL_PARAM params[])
-{
-	OSSL_FUNC_keymgmt_set_params_fn *default_set_params_fn;
-	struct ps_key *key = vkey;
-	const OSSL_PARAM *p;
-	size_t len;
-
-	if (key == NULL)
-		return 0;
-
-	ps_key_debug(key, "key: %p", key);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_key_debug(key, "param: %s",  p->key);
-
-	default_set_params_fn = (OSSL_FUNC_keymgmt_set_params_fn *)
-			fwd_keymgmt_get_func(&key->pctx->fwd,
-				key->type, OSSL_FUNC_KEYMGMT_SET_PARAMS,
-				&key->pctx->dbg);
-
-	/* default_set_params_fn is optional */
-	if (default_set_params_fn != NULL) {
-		if (!default_set_params_fn(key->fwd_key, params)) {
-			put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				      "default_set_params_fn failed");
-			return 0;
-		}
-	}
-
-	if (key->secure_key == NULL)
-		return 1;
-
-	p = OSSL_PARAM_locate_const(params, PS_PROV_PKEY_PARAM_SK_FUNCS);
-	if (p != NULL && !OSSL_PARAM_get_octet_string_ptr(p,
-				(const void **)&key->funcs, &len)) {
-		put_error_key(key, PS_ERR_INTERNAL_ERROR,
-			      "OSSL_PARAM_get_octet_string_ptr failed");
-		return 0;
-	}
-
-	p = OSSL_PARAM_locate_const(params, PS_PROV_PKEY_PARAM_SK_PRIVATE);
-	if (p != NULL && !OSSL_PARAM_get_octet_string_ptr(p,
-				(const void **)&key->private, &len)) {
-		put_error_key(key, PS_ERR_INTERNAL_ERROR,
-			      "OSSL_PARAM_get_octet_string_ptr failed");
-		return 0;
-	}
-
-	return 1;
-}
-
-#define PS_SECURE_KEY_FUNC_PARMS					\
-	OSSL_PARAM_octet_ptr(PS_PROV_PKEY_PARAM_SK_FUNCS, NULL, 0),	\
-	OSSL_PARAM_octet_ptr(PS_PROV_PKEY_PARAM_SK_PRIVATE, NULL, 0)
-
-#define PS_SECURE_KEY_PARMS					\
-	OSSL_PARAM_octet_string(PS_PROV_PKEY_PARAM_SK_BLOB, NULL, 0),	\
-	PS_SECURE_KEY_FUNC_PARMS
-
-static const OSSL_PARAM *ps_keymgmt_gettable_params(
-				struct provider_ctx *pctx, int pkey_type)
-{
-	OSSL_FUNC_keymgmt_gettable_params_fn *fwd_gettable_params_fn;
-
-	if (pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pkey_type: %d", pkey_type);
-
-	fwd_gettable_params_fn = (OSSL_FUNC_keymgmt_gettable_params_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, pkey_type,
-				     OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS,
-				     &pctx->dbg);
-
-	/* fwd_gettable_params_fn is optional */
-	if (fwd_gettable_params_fn != NULL)
-		return fwd_gettable_params_fn(pctx->fwd.ctx);
-}
-
-static const OSSL_PARAM *ps_keymgmt_settable_params(
-				struct provider_ctx *pctx, int pkey_type)
-{
-	OSSL_FUNC_keymgmt_settable_params_fn *default_settable_params_fn;
-
-	if (pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pkey_type: %d", pkey_type);
-
-	default_settable_params_fn = (OSSL_FUNC_keymgmt_settable_params_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, pkey_type,
-				     OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS,
-				     &pctx->dbg);
-
-	/* default_settable_params_fn is optional */
-	if (default_settable_params_fn != NULL)
-		return default_settable_params_fn(pctx->fwd.ctx);
-}
-
-static int ps_keymgmt_has(const void *vkey, int selection)
-{
-	OSSL_FUNC_keymgmt_has_fn *fwd_has_fn;
-	const struct ps_key *key = vkey;
-	int default_selection = selection;
-
-	if (key == NULL)
-		return 0;
-
-	ps_key_debug(key, "key: %p selection: %x", key,
-		     selection);
-
-	fwd_has_fn = (OSSL_FUNC_keymgmt_has_fn *)
-		fwd_keymgmt_get_func(&key->pctx->fwd, key->type,
-				     OSSL_FUNC_KEYMGMT_HAS, &key->pctx->dbg);
-
-	if (!fwd_has_fn) {
-		put_error_key(key,
-			      PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			      "no fwd_has_fn");
-		return 0;
-	}
-
-	/* A secure key doesn't have the private parts in the default key */
-	if (key->secure_key != NULL)
-		default_selection &= (~OSSL_KEYMGMT_SELECT_PRIVATE_KEY);
-
-	return fwd_has_fn(key->fwd_key, default_selection);
-}
-
-struct ps_export_cb {
-	struct ps_key *key;
-	OSSL_CALLBACK *param_callback;
-	void *cbarg;
-};
-
-static int ps_keymgmt_export_cb(const OSSL_PARAM params[], void *arg)
-{
-	return 0;
-}
-
-static int ps_keymgmt_export(void *vkey, int selection,
-				  OSSL_CALLBACK *param_callback, void *cbarg)
-{
-	OSSL_FUNC_keymgmt_export_fn *default_export_fn;
-	struct ps_export_cb cb_data;
-	struct ps_key *key = vkey;
-
-	if (key == NULL || param_callback == NULL)
-		return 0;
-
-	ps_key_debug(key, "key: %p selection: %x", key, selection);
-
-	default_export_fn = (OSSL_FUNC_keymgmt_export_fn *)
-			fwd_keymgmt_get_func(&key->pctx->fwd,
-					key->type, OSSL_FUNC_KEYMGMT_EXPORT,
-					&key->pctx->dbg);
-	if (default_export_fn == NULL) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			      "no default export_fn");
-		return 0;
-	}
-
-	if (key->secure_key == NULL ||
-	    (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) == 0) {
-		/*
-		 * Clear key, or no private key selected, call default_export_fn
-		 *  with original callback
-		 */
-		if (!default_export_fn(key->fwd_key, selection,
-				       param_callback, cbarg)) {
-			put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				      "default_export_fn failed");
-			return 0;
-		}
-		return 1;
-	}
-
-	/* Let the callback add our 3 addl. params */
-	cb_data.key = key;
-	cb_data.param_callback = param_callback;
-	cb_data.cbarg = cbarg;
-	if (!default_export_fn(key->fwd_key, selection,
-			       ps_keymgmt_export_cb, &cb_data)) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			      "default_export_fn failed");
-		return 0;
-	}
-
-	return 1;
-}
-
-static int ps_keymgmt_import(void *vkey, int selection,
-				  const OSSL_PARAM params[])
-{
-	const OSSL_PARAM *p_blob, *p_funcs, *p_private, *p;
-	OSSL_FUNC_keymgmt_import_fn *default_import_fn;
-	struct ps_key *key = vkey;
-	size_t len;
-
-	if (key == NULL)
-		return 0;
-
-	ps_key_debug(key, "key: %p selection: %x", key,
-		     selection);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_key_debug(key, "param: %s", p->key);
-
-	default_import_fn = (OSSL_FUNC_keymgmt_import_fn *)
-			fwd_keymgmt_get_func(&key->pctx->fwd,
-					key->type, OSSL_FUNC_KEYMGMT_IMPORT,
-					&key->pctx->dbg);
-	if (default_import_fn == NULL) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			      "no default import_fn");
-		return 0;
-	}
-
-	if (!default_import_fn(key->fwd_key, selection, params)) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			      "default_import_fn failed");
-		return 0;
-	}
-
-	if (key->secure_key != NULL)
-		OPENSSL_free(key->secure_key);
-	key->secure_key = NULL;
-	key->secure_key_size = 0;
-	key->funcs = NULL;
-	key->private = NULL;
-
-	p_blob = OSSL_PARAM_locate_const(params, PS_PROV_PKEY_PARAM_SK_BLOB);
-	p_funcs = OSSL_PARAM_locate_const(params, PS_PROV_PKEY_PARAM_SK_FUNCS);
-	p_private = OSSL_PARAM_locate_const(params,
-					    PS_PROV_PKEY_PARAM_SK_PRIVATE);
-
-	if (p_blob != NULL && p_funcs != NULL && p_private != NULL) {
-		if (!OSSL_PARAM_get_octet_string(p_blob,
-						 (void **)&key->secure_key, 0,
-						 &key->secure_key_size)) {
-			put_error_key(key, PS_ERR_INTERNAL_ERROR,
-				      "OSSL_PARAM_get_octet_string failed");
-			return 0;
-		}
-
-		if (!OSSL_PARAM_get_octet_string_ptr(p_funcs,
-					(const void **)&key->funcs, &len)) {
-			put_error_key(key, PS_ERR_INTERNAL_ERROR,
-				      "OSSL_PARAM_get_octet_string_ptr failed");
-			return 0;
-		}
-
-		if (!OSSL_PARAM_get_octet_string_ptr(p_private,
-				(const void **)&key->private, &len)) {
-			put_error_key(key, PS_ERR_INTERNAL_ERROR,
-				      "OSSL_PARAM_get_octet_string_ptr failed");
-			return 0;
-		}
-	}
-
-	return 1;
-}
-
-static const OSSL_PARAM *ps_keymgmt_export_types(int selection,
-						      int pkey_type)
-{
-	OSSL_FUNC_keymgmt_export_types_fn *fwd_export_types_fn;
-	struct provider_ctx *pctx;
-
-	pctx = OSSL_PROVIDER_get0_provider_ctx(pkcs11sign_provider);
-	if (pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "selection: %d pkey_type: %d", selection,
-		     pkey_type);
-
-	fwd_export_types_fn =
-		(OSSL_FUNC_keymgmt_export_types_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, pkey_type,
-				     OSSL_FUNC_KEYMGMT_EXPORT_TYPES,
-				     &pctx->dbg);
-
-	/* fwd_export_types_fn is optional */
-	if (!fwd_export_types_fn)
-		return NULL;
-
-	return fwd_export_types_fn(selection);
-}
-
-static const OSSL_PARAM *ps_keymgmt_import_types(int selection,
-						      int pkey_type)
-{
-	OSSL_FUNC_keymgmt_import_types_fn *fwd_import_types_fn;
-	struct provider_ctx *pctx;
-
-	pctx = OSSL_PROVIDER_get0_provider_ctx(pkcs11sign_provider);
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "selection: %d pkey_type: %d", selection,
-		     pkey_type);
-
-	fwd_import_types_fn = (OSSL_FUNC_keymgmt_import_types_fn *)
-			fwd_keymgmt_get_func(&pctx->fwd, pkey_type,
-					     OSSL_FUNC_KEYMGMT_IMPORT_TYPES,
-					     &pctx->dbg);
-
-	/* fwd_import_types_fn is optional */
-	if (!fwd_import_types_fn)
-		return NULL;
-
-	return fwd_import_types_fn(selection);
-}
-
-static struct ps_op_ctx *ps_keymgmt_gen_init(
-				struct provider_ctx *pctx, int selection,
-				const OSSL_PARAM params[], int pkey_type)
-{
-	OSSL_FUNC_keymgmt_gen_cleanup_fn *fwd_gen_cleanup_fn;
-	OSSL_FUNC_keymgmt_gen_init_fn *fwd_gen_init_fn;
-	struct ps_op_ctx *genctx;
-	const OSSL_PARAM *p;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "selection: %x type: %d", selection, pkey_type);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_dbg_debug(&pctx->dbg, "param: %s", p->key);
-
-	fwd_gen_init_fn = (OSSL_FUNC_keymgmt_gen_init_fn *)
-			fwd_keymgmt_get_func(&pctx->fwd, pkey_type,
-					     OSSL_FUNC_KEYMGMT_GEN_INIT,
-					     &pctx->dbg);
-	if (!fwd_gen_init_fn) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default gen_init_fn");
-		return NULL;
-	}
-
-	fwd_gen_cleanup_fn = (OSSL_FUNC_keymgmt_gen_cleanup_fn *)
-			fwd_keymgmt_get_func(&pctx->fwd, pkey_type,
-					     OSSL_FUNC_KEYMGMT_GEN_CLEANUP,
-					     &pctx->dbg);
-	if (fwd_gen_cleanup_fn == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default gen_cleanup_fn");
-		return NULL;
-	}
-
-	genctx = ps_op_newctx(pctx, NULL, pkey_type);
-	if (!genctx) {
-		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
-			       "ps_op_newctx failed");
-		return NULL;
-	}
-
-	if (!ps_op_init(genctx, NULL, EVP_PKEY_OP_KEYGEN)) {
-		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
-			       "ps_op_init failed");
-		ps_op_freectx(genctx);
-		return NULL;
-	}
-
-	genctx->fwd_op_ctx = fwd_gen_init_fn(pctx->fwd.ctx,
-						     selection, params);
-	if (genctx->fwd_op_ctx == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			       "fwd_gen_init_fn failed");
-		ps_op_freectx(genctx);
-		return NULL;
-	}
-	genctx->fwd_op_ctx_free = fwd_gen_cleanup_fn;
-
-	ps_dbg_debug(&pctx->dbg, "genctx: %p", genctx);
-	return genctx;
-}
-
-static void ps_keymgmt_gen_cleanup(void *vgenctx)
-{
-	struct ps_op_ctx *genctx = vgenctx;
-
-	if (!genctx)
-		return;
-
-	ps_opctx_debug(genctx, "genctx: %p", genctx);
-	ps_op_freectx(genctx);
-}
-
-static int ps_keymgmt_gen_set_params(void *vgenctx,
-					  const OSSL_PARAM params[])
-{
-	OSSL_FUNC_keymgmt_gen_set_params_fn *default_gen_set_params_fn;
-	struct ps_op_ctx *genctx = vgenctx;
-	const OSSL_PARAM *p;
-
-	if (!genctx)
-		return 0;
-
-	ps_opctx_debug(genctx, "genctx: %p", genctx);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(genctx, "param: %s", p->key);
-
-	default_gen_set_params_fn = (OSSL_FUNC_keymgmt_gen_set_params_fn *)
-			fwd_keymgmt_get_func(&genctx->pctx->fwd,
-				genctx->type, OSSL_FUNC_KEYMGMT_GEN_SET_PARAMS,
-				&genctx->pctx->dbg);
-
-	/* default_gen_set_params_fn is optional */
-	if (default_gen_set_params_fn != NULL) {
-		if (!default_gen_set_params_fn(genctx->fwd_op_ctx,
-					       params)) {
-			put_error_op_ctx(genctx,
-					 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-					 "default_gen_set_params_fn failed");
-			return 0;
-		}
-	}
-
-	return 1;
-}
-
-static const OSSL_PARAM *ps_keymgmt_gen_settable_params(
-					struct ps_op_ctx *genctx,
-					struct provider_ctx *pctx,
-					int pkey_type)
-{
-	OSSL_FUNC_keymgmt_gen_settable_params_fn
-						*default_gen_settable_params_fn;
-	const OSSL_PARAM *params = NULL, *p;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pkey_type: %d", pkey_type);
-
-	default_gen_settable_params_fn =
-		(OSSL_FUNC_keymgmt_gen_settable_params_fn *)
-			fwd_keymgmt_get_func(&pctx->fwd,
-				pkey_type,
-				OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS,
-				&pctx->dbg);
-
-	/* default_gen_settable_params_fn is optional */
-	if (default_gen_settable_params_fn != NULL)
-		params = default_gen_settable_params_fn(genctx->fwd_op_ctx,
-						   pctx->fwd.ctx);
-
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_dbg_debug(&pctx->dbg, "param: %s", p->key);
-
-	return params;
-}
-
-static int ps_keymgmt_gen_set_template(void *vgenctx, void *vtempl)
-{
-	OSSL_FUNC_keymgmt_gen_set_template_fn *default_gen_set_template_fn;
-	struct ps_op_ctx *genctx = vgenctx;
-	struct ps_key *templ = vtempl;
-
-	if (!genctx || !templ)
-		return 0;
-
-	ps_opctx_debug(genctx, "genctx: %p templ: %p", genctx, templ);
-
-	default_gen_set_template_fn = (OSSL_FUNC_keymgmt_gen_set_template_fn *)
-			fwd_keymgmt_get_func(&genctx->pctx->fwd,
-					genctx->type,
-					OSSL_FUNC_KEYMGMT_GEN_SET_TEMPLATE,
-					&genctx->pctx->dbg);
-
-	if (!default_gen_set_template_fn) {
-		put_error_op_ctx(genctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default get_set_template_fn");
-		return 0;
-	}
-
-	return default_gen_set_template_fn(genctx->fwd_op_ctx,
-					   templ->fwd_key);
-}
-
-static void *ps_keymgmt_gen(void *vgenctx,
-				 OSSL_CALLBACK *osslcb, void *cbarg)
-{
-	OSSL_FUNC_keymgmt_gen_fn *default_gen_fn;
-	struct ps_op_ctx *genctx = vgenctx;
-	struct ps_key *key;
-
-	if (!genctx)
-		return NULL;
-
-	ps_opctx_debug(genctx, "genctx: %p", genctx);
-
-	default_gen_fn = (OSSL_FUNC_keymgmt_gen_fn *)
-			fwd_keymgmt_get_func(&genctx->pctx->fwd,
-					genctx->type, OSSL_FUNC_KEYMGMT_GEN,
-					&genctx->pctx->dbg);
-
-	if (!default_gen_fn) {
-		put_error_op_ctx(genctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default gen_fn");
-		return NULL;
-	}
-
-	key = OPENSSL_zalloc(sizeof(struct ps_key));
-	if (!key) {
-		put_error_op_ctx(genctx, PS_ERR_MALLOC_FAILED,
-				 "OPENSSL_zalloc failed");
-		return NULL;
-	}
-
-	key->pctx = genctx->pctx;
-	key->type = genctx->type;
-
-	key->fwd_key = default_gen_fn(genctx->fwd_op_ctx,
-					  osslcb, cbarg);
-	if (!key->fwd_key) {
-		put_error_op_ctx(genctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_gen_fn failed");
-		OPENSSL_free(key);
-		return NULL;
-	}
-
-	ps_keymgmt_upref(key);
-
-	ps_opctx_debug(genctx, "key: %p", key);
-
-	return key;
-}
-
-static void *ps_keymgmt_load(const void *reference, size_t reference_sz)
-{
-	struct ps_key *key;
-
-	if (!reference)
-		return NULL;
-
-	if (reference_sz == sizeof(struct ps_key)) {
-		/* The contents of the reference is the address to our object */
-		key = *(struct ps_key **)reference;
-
-		/* We grabbed, so we detach it */
-		*(struct ps_key **)reference = NULL;
-		return key;
-	}
-
-	return NULL;
-}
-
-static int ps_keymgmt_get_size(struct ps_key *key)
-{
-	int size = 0;
-	OSSL_PARAM key_params[] = {
-		OSSL_PARAM_int(OSSL_PKEY_PARAM_MAX_SIZE, &size),
-		OSSL_PARAM_END
-	};
-
-	ps_key_debug(key, "key: %p", key);
-
-	if (!ps_keymgmt_get_params(key, key_params) ||
-	    !OSSL_PARAM_modified(&key_params[0]) ||
-	    size <= 0) {
-		put_error_key(key, PS_ERR_MISSING_PARAMETER,
-				 "ps_keymgmt_get_params failed to "
-				 "get OSSL_PKEY_PARAM_MAX_SIZE");
-		return -1;
-	}
-
-	ps_key_debug(key, "size: %d", size);
-	return size;
-}
-
-static int ps_keymgmt_get_bits(struct ps_key *key)
-{
-	int bits = 0;
-	OSSL_PARAM key_params[] = {
-		OSSL_PARAM_int(OSSL_PKEY_PARAM_BITS, &bits),
-		OSSL_PARAM_END
-	};
-
-	ps_key_debug(key, "key: %p", key);
-
-	if (!ps_keymgmt_get_params(key, key_params) ||
-	    !OSSL_PARAM_modified(&key_params[0]) ||
-	    bits <= 0) {
-		put_error_key(key, PS_ERR_MISSING_PARAMETER,
-				 "ps_keymgmt_get_params failed to "
-				 "get OSSL_PKEY_PARAM_BITS");
-		return -1;
-	}
-
-	ps_key_debug(key, "bits: %d", bits);
-	return bits;
-}
-
-static void *ps_keymgmt_rsa_new(void *vpctx)
-{
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-
-	return ps_keymgmt_new(pctx, EVP_PKEY_RSA);
-}
-
-static const char *ps_keymgmt_rsa_query_operation_name(int operation_id)
-{
-	switch (operation_id) {
-	case OSSL_OP_SIGNATURE:
-	case OSSL_OP_ASYM_CIPHER:
-		return "RSA";
-	}
-
-	return NULL;
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_gettable_params(void *vprovctx)
-{
-	struct provider_ctx *pctx = vprovctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gettable_params(pctx, EVP_PKEY_RSA);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_settable_params(void *vprovctx)
-{
-	struct provider_ctx *pctx = vprovctx;
-
-	if (pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_settable_params(pctx, EVP_PKEY_RSA);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_export_types(int selection)
-{
-	return ps_keymgmt_export_types(selection, EVP_PKEY_RSA);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_import_types(int selection)
-{
-	return ps_keymgmt_import_types(selection, EVP_PKEY_RSA);
-}
-
-static void *ps_keymgmt_rsa_gen_init(void *vprovctx, int selection,
-					  const OSSL_PARAM params[])
-{
-	struct provider_ctx *pctx = vprovctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_init(pctx, selection, params,
-					EVP_PKEY_RSA);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_gen_settable_params(void *vgenctx,
-								 void *vprovctx)
-{
-	struct ps_op_ctx *genctx = vgenctx;
-	struct provider_ctx *pctx = vprovctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_settable_params(genctx, pctx,
-						   EVP_PKEY_RSA);
-}
-
-static void *ps_keymgmt_rsa_pss_new(void *vprovctx)
-{
-	struct provider_ctx *pctx = vprovctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_new(pctx, EVP_PKEY_RSA_PSS);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_pss_gettable_params(void *vprovctx)
-{
-	struct provider_ctx *pctx = vprovctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gettable_params(pctx, EVP_PKEY_RSA_PSS);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_pss_settable_params(void *vprovctx)
-{
-	struct provider_ctx *pctx = vprovctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_settable_params(pctx, EVP_PKEY_RSA_PSS);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_pss_export_types(int selection)
-{
-	return ps_keymgmt_export_types(selection, EVP_PKEY_RSA_PSS);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_pss_import_types(int selection)
-{
-	return ps_keymgmt_import_types(selection, EVP_PKEY_RSA_PSS);
-}
-
-static void *ps_keymgmt_rsa_pss_gen_init(void *vpctx, int selection,
-					      const OSSL_PARAM params[])
-{
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_init(pctx, selection, params,
-					EVP_PKEY_RSA_PSS);
-}
-
-static const OSSL_PARAM *ps_keymgmt_rsa_pss_gen_settable_params(
-								void *vgenctx,
-								void *vpctx)
-{
-	struct ps_op_ctx *genctx = vgenctx;
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_settable_params(genctx, pctx,
-						   EVP_PKEY_RSA_PSS);
-}
-
-static void *ps_keymgmt_ec_new(void *vpctx)
-{
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_new(pctx, EVP_PKEY_EC);
-}
-
-static const char *ps_keymgmt_ec_query_operation_name(int operation_id)
-{
-	switch (operation_id) {
-	case OSSL_OP_KEYEXCH:
-		return "ECDH";
-	case OSSL_OP_SIGNATURE:
-		return "ECDSA";
-	}
-
-	return NULL;
-}
-
-static const OSSL_PARAM *ps_keymgmt_ec_gettable_params(void *vpctx)
-{
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gettable_params(pctx, EVP_PKEY_EC);
-}
-
-static const OSSL_PARAM *ps_keymgmt_ec_settable_params(void *vpctx)
-{
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_settable_params(pctx, EVP_PKEY_EC);
-}
-
-static const OSSL_PARAM *ps_keymgmt_ec_export_types(int selection)
-{
-	return ps_keymgmt_export_types(selection, EVP_PKEY_EC);
-}
-
-static const OSSL_PARAM *ps_keymgmt_ec_import_types(int selection)
-{
-	return ps_keymgmt_import_types(selection, EVP_PKEY_EC);
-}
-
-static void *ps_keymgmt_ec_gen_init(void *vpctx, int selection,
-					 const OSSL_PARAM params[])
-{
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_init(pctx, selection, params,
-					EVP_PKEY_EC);
-}
-
-static const OSSL_PARAM *ps_keymgmt_ec_gen_settable_params(void *vopctx,
-								void *vpctx)
-{
-	struct ps_op_ctx *genctx = vopctx;
-	struct provider_ctx *pctx = vpctx;
-
-	if (!pctx)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_settable_params(genctx, pctx,
-						   EVP_PKEY_EC);
-}
-
 // keep
 static void *ps_keyexch_ec_newctx(void *vpctx)
 {
@@ -3130,7 +2025,7 @@ static int ps_keyexch_ec_init(void *vctx, void *vkey,
 {
 	OSSL_FUNC_keyexch_init_fn *default_init_fn;
 	struct ps_op_ctx *ctx = vctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
@@ -3169,7 +2064,7 @@ static int ps_keyexch_ec_set_peer(void *vctx, void *vpeerkey)
 
 {
 	OSSL_FUNC_keyexch_set_peer_fn *default_set_peer_fn;
-	struct ps_key *peerkey = vpeerkey;
+	struct obj *peerkey = vpeerkey;
 	struct ps_op_ctx *ctx = vctx;
 
 	if (ctx == NULL || peerkey == NULL)
@@ -3438,6 +2333,7 @@ static int ps_asym_rsa_decrypt(void *vctx,
 		return ps_asym_op_decrypt(ctx, out, outlen, outsize,
 					    in, inlen);
 
+#if 0
 	funcs = ctx->key->funcs;
 	if (funcs == NULL) {
 		put_error_op_ctx(ctx, PS_ERR_MISSING_PARAMETER,
@@ -3452,6 +2348,7 @@ static int ps_asym_rsa_decrypt(void *vctx,
 		ps_opctx_debug(ctx, "ps_keymgmt_get_size failed");
 		return 0;
 	}
+#endif
 
 	if (out == NULL) {
 		tmp = OPENSSL_zalloc(rsa_size);
@@ -3520,6 +2417,7 @@ static int ps_asym_rsa_decrypt(void *vctx,
 			goto out;
 		}
 
+#if 0
 		rc = funcs->rsa_decrypt_oaep(key->secure_key,
 					     key->secure_key_size,
 					     out, outlen, in, inlen,
@@ -3528,6 +2426,7 @@ static int ps_asym_rsa_decrypt(void *vctx,
 					     oaep_label, oaep_label_len,
 					     key->private,
 					     ps_dbg_enabled(&ctx->pctx->dbg));
+#endif
 		break;
 
 	default:
@@ -3538,10 +2437,12 @@ static int ps_asym_rsa_decrypt(void *vctx,
 			goto out;
 		}
 
+#if 0
 		rc = funcs->rsa_decrypt(key->secure_key, key->secure_key_size,
 					out, outlen, in, inlen, pad_mode,
 					key->private,
 					ps_dbg_enabled(&ctx->pctx->dbg));
+#endif
 		break;
 	}
 
@@ -3639,7 +2540,7 @@ static int ps_signature_rsa_sign(void *vopctx,
 	EVP_MD *sign_md = NULL, *mgf_md = NULL;
 	int rsa_size, pad_mode, salt_len, rc;
 	struct ps_op_ctx *opctx = vopctx;
-	struct ps_key *key;
+	struct obj *key;
 	struct ps_funcs *funcs;
 
 	if (opctx == NULL || siglen == NULL || tbs == NULL)
@@ -3661,11 +2562,13 @@ static int ps_signature_rsa_sign(void *vopctx,
 
 	key = opctx->key;
 
+#if 0
 	rsa_size = ps_keymgmt_get_size(key);
 	if (rsa_size <= 0) {
 		ps_opctx_debug(opctx, "ERROR: ps_keymgmt_get_size failed");
 		return 0;
 	}
+#endif
 
 	if (sig == NULL) {
 		*siglen = rsa_size;
@@ -3679,12 +2582,14 @@ static int ps_signature_rsa_sign(void *vopctx,
 		return 0;
 	}
 
+#if 0
 	funcs = opctx->key->funcs;
 	if (funcs == NULL) {
 		put_error_op_ctx(opctx, PS_ERR_MISSING_PARAMETER,
 				 "no secure key funcs");
 		return 0;
 	}
+#endif
 
 	sign_md = ps_signature_op_get_md(opctx);
 	pad_mode = ps_signature_op_get_padding(opctx);
@@ -3723,12 +2628,14 @@ static int ps_signature_rsa_sign(void *vopctx,
 
 		}
 
+#if 0
 		rc = funcs->rsa_sign(key->secure_key, key->secure_key_size,
 				     sig, siglen, tbs, tbslen, pad_mode,
 				     sign_md != NULL ?
 					EVP_MD_type(sign_md) : NID_undef,
 				     key->private,
 				     ps_dbg_enabled(&opctx->pctx->dbg));
+#endif
 		break;
 
 	case RSA_PKCS1_PSS_PADDING:
@@ -3762,12 +2669,14 @@ static int ps_signature_rsa_sign(void *vopctx,
 			goto out;
 		}
 
+#if 0
 		rc = funcs->rsa_pss_sign(key->secure_key, key->secure_key_size,
 					 sig, siglen, tbs, tbslen,
 					 EVP_MD_type(sign_md),
 					 EVP_MD_type(mgf_md),
 					 salt_len, key->private,
 					 ps_dbg_enabled(&opctx->pctx->dbg));
+#endif
 		break;
 	default:
 		put_error_op_ctx(opctx, PS_ERR_INVALID_PADDING,
@@ -3803,7 +2712,7 @@ static int ps_signature_rsa_digest_sign_init(void *vopctx,
 					     const OSSL_PARAM params[])
 {
 	struct ps_op_ctx *opctx = vopctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 
 	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p", opctx,
 			mdname != NULL ? mdname : "", key);
@@ -3877,7 +2786,7 @@ static int ps_signature_ec_sign(void *vopctx,
 				const unsigned char *tbs, size_t tbslen)
 {
 	struct ps_op_ctx *opctx = vopctx;
-	struct ps_key *key;
+	struct obj *key;
 	EVP_MD *sign_md = NULL;
 	struct ps_funcs *funcs;
 	int ec_size, rc;
@@ -3901,11 +2810,13 @@ static int ps_signature_ec_sign(void *vopctx,
 
 	key = opctx->key;
 
+#if 0
 	ec_size = ps_keymgmt_get_size(key);
 	if (ec_size <= 0) {
 		ps_opctx_debug(opctx, "ERROR: ps_keymgmt_get_size failed");
 		return 0;
 	}
+#endif
 
 	if (sig == NULL) {
 		*siglen = ec_size;
@@ -3919,12 +2830,14 @@ static int ps_signature_ec_sign(void *vopctx,
 		return 0;
 	}
 
+#if 0
 	funcs = opctx->key->funcs;
 	if (funcs == NULL) {
 		put_error_op_ctx(opctx, PS_ERR_MISSING_PARAMETER,
 				 "no secure key funcs");
 		return 0;
 	}
+#endif
 
 	sign_md = ps_signature_op_get_md(opctx);
 	if (sign_md == NULL) {
@@ -3948,6 +2861,7 @@ static int ps_signature_ec_sign(void *vopctx,
 		goto out;
 	}
 
+#if 0
 	rc = funcs->ecdsa_sign(key->secure_key, key->secure_key_size,
 				 sig, siglen, tbs, tbslen,
 				 EVP_MD_type(sign_md), key->private,
@@ -3959,6 +2873,7 @@ static int ps_signature_ec_sign(void *vopctx,
 		rc = 0;
 		goto out;
 	}
+#endif
 
 	rc = 1;
 
@@ -3977,7 +2892,7 @@ static int ps_signature_ec_digest_sign_init(void *vopctx,
 					    const OSSL_PARAM params[])
 {
 	struct ps_op_ctx *opctx = vopctx;
-	struct ps_key *key = vkey;
+	struct obj *key = vkey;
 
 	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p", opctx,
 			mdname != NULL ? mdname : "", key);
@@ -4131,136 +3046,6 @@ static const OSSL_DISPATCH ps_rsa_asym_cipher_functions[] = {
 static const OSSL_ALGORITHM ps_asym_cipher[] = {
 	{ "RSA:rsaEncryption", "provider="PS_PROV_NAME,
 				ps_rsa_asym_cipher_functions, NULL },
-	{ NULL, NULL, NULL, NULL }
-};
-
-
-#define DISPATCH_KEYMGMT_ELEM(NAME, name) \
-	{ OSSL_FUNC_KEYMGMT_##NAME, (void (*)(void))name }
-
-static const OSSL_DISPATCH ps_rsa_keymgmt_functions[] = {
-	/* Constructor, destructor */
-	DISPATCH_KEYMGMT_ELEM(NEW, ps_keymgmt_rsa_new),
-	DISPATCH_KEYMGMT_ELEM(FREE, ps_keymgmt_free),
-
-	/* Key generation and loading */
-	DISPATCH_KEYMGMT_ELEM(GEN_INIT, ps_keymgmt_rsa_gen_init),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_TEMPLATE, ps_keymgmt_gen_set_template),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_PARAMS, ps_keymgmt_gen_set_params),
-	DISPATCH_KEYMGMT_ELEM(GEN_SETTABLE_PARAMS,
-			      ps_keymgmt_rsa_gen_settable_params),
-	DISPATCH_KEYMGMT_ELEM(GEN, ps_keymgmt_gen),
-	DISPATCH_KEYMGMT_ELEM(GEN_CLEANUP, ps_keymgmt_gen_cleanup),
-	DISPATCH_KEYMGMT_ELEM(LOAD, ps_keymgmt_load),
-
-	/* Key object checking */
-	DISPATCH_KEYMGMT_ELEM(HAS, ps_keymgmt_has),
-	DISPATCH_KEYMGMT_ELEM(MATCH, ps_keymgmt_match),
-	DISPATCH_KEYMGMT_ELEM(VALIDATE, ps_keymgmt_validate),
-	DISPATCH_KEYMGMT_ELEM(QUERY_OPERATION_NAME,
-			      ps_keymgmt_rsa_query_operation_name),
-
-	/* Key object information */
-	DISPATCH_KEYMGMT_ELEM(GET_PARAMS, ps_keymgmt_get_params),
-	DISPATCH_KEYMGMT_ELEM(GETTABLE_PARAMS, ps_keymgmt_rsa_gettable_params),
-	DISPATCH_KEYMGMT_ELEM(SET_PARAMS, ps_keymgmt_set_params),
-	DISPATCH_KEYMGMT_ELEM(SETTABLE_PARAMS, ps_keymgmt_rsa_settable_params),
-
-	/* Import and export routines */
-	DISPATCH_KEYMGMT_ELEM(EXPORT, ps_keymgmt_export),
-	DISPATCH_KEYMGMT_ELEM(EXPORT_TYPES, ps_keymgmt_rsa_export_types),
-	DISPATCH_KEYMGMT_ELEM(IMPORT, ps_keymgmt_import),
-	DISPATCH_KEYMGMT_ELEM(IMPORT_TYPES, ps_keymgmt_rsa_import_types),
-	/* No copy function, OpenSSL will use export/import to copy instead */
-
-	{ 0, NULL }
-};
-
-static const OSSL_DISPATCH ps_rsapss_keymgmt_functions[] = {
-	/* Constructor, destructor */
-	DISPATCH_KEYMGMT_ELEM(NEW, ps_keymgmt_rsa_pss_new),
-	DISPATCH_KEYMGMT_ELEM(FREE, ps_keymgmt_free),
-
-	/* Key generation and loading */
-	DISPATCH_KEYMGMT_ELEM(GEN_INIT, ps_keymgmt_rsa_pss_gen_init),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_TEMPLATE, ps_keymgmt_gen_set_template),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_PARAMS, ps_keymgmt_gen_set_params),
-	DISPATCH_KEYMGMT_ELEM(GEN_SETTABLE_PARAMS,
-			      ps_keymgmt_rsa_pss_gen_settable_params),
-	DISPATCH_KEYMGMT_ELEM(GEN, ps_keymgmt_gen),
-	DISPATCH_KEYMGMT_ELEM(GEN_CLEANUP, ps_keymgmt_gen_cleanup),
-	DISPATCH_KEYMGMT_ELEM(LOAD, ps_keymgmt_load),
-
-	/* Key object checking */
-	DISPATCH_KEYMGMT_ELEM(HAS, ps_keymgmt_has),
-	DISPATCH_KEYMGMT_ELEM(MATCH, ps_keymgmt_match),
-	DISPATCH_KEYMGMT_ELEM(VALIDATE, ps_keymgmt_validate),
-	DISPATCH_KEYMGMT_ELEM(QUERY_OPERATION_NAME,
-			      ps_keymgmt_rsa_query_operation_name),
-
-	/* Key object information */
-	DISPATCH_KEYMGMT_ELEM(GET_PARAMS, ps_keymgmt_get_params),
-	DISPATCH_KEYMGMT_ELEM(GETTABLE_PARAMS,
-			      ps_keymgmt_rsa_pss_gettable_params),
-	DISPATCH_KEYMGMT_ELEM(SET_PARAMS, ps_keymgmt_set_params),
-	DISPATCH_KEYMGMT_ELEM(SETTABLE_PARAMS,
-			      ps_keymgmt_rsa_pss_settable_params),
-
-	/* Import and export routines */
-	DISPATCH_KEYMGMT_ELEM(EXPORT, ps_keymgmt_export),
-	DISPATCH_KEYMGMT_ELEM(EXPORT_TYPES, ps_keymgmt_rsa_pss_export_types),
-	DISPATCH_KEYMGMT_ELEM(IMPORT, ps_keymgmt_import),
-	DISPATCH_KEYMGMT_ELEM(IMPORT_TYPES, ps_keymgmt_rsa_pss_import_types),
-	/* No copy function, OpenSSL will use export/import to copy instead */
-
-	{ 0, NULL }
-};
-
-static const OSSL_DISPATCH ps_ec_keymgmt_functions[] = {
-	/* Constructor, destructor */
-	DISPATCH_KEYMGMT_ELEM(NEW, ps_keymgmt_ec_new),
-	DISPATCH_KEYMGMT_ELEM(FREE, ps_keymgmt_free),
-
-	/* Key generation and loading */
-	DISPATCH_KEYMGMT_ELEM(GEN_INIT, ps_keymgmt_ec_gen_init),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_TEMPLATE, ps_keymgmt_gen_set_template),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_PARAMS, ps_keymgmt_gen_set_params),
-	DISPATCH_KEYMGMT_ELEM(GEN_SETTABLE_PARAMS,
-			      ps_keymgmt_ec_gen_settable_params),
-	DISPATCH_KEYMGMT_ELEM(GEN, ps_keymgmt_gen),
-	DISPATCH_KEYMGMT_ELEM(GEN_CLEANUP, ps_keymgmt_gen_cleanup),
-	DISPATCH_KEYMGMT_ELEM(LOAD, ps_keymgmt_load),
-
-	/* Key object checking */
-	DISPATCH_KEYMGMT_ELEM(HAS, ps_keymgmt_has),
-	DISPATCH_KEYMGMT_ELEM(MATCH, ps_keymgmt_match),
-	DISPATCH_KEYMGMT_ELEM(VALIDATE, ps_keymgmt_validate),
-	DISPATCH_KEYMGMT_ELEM(QUERY_OPERATION_NAME,
-			      ps_keymgmt_ec_query_operation_name),
-
-	/* Key object information */
-	DISPATCH_KEYMGMT_ELEM(GET_PARAMS, ps_keymgmt_get_params),
-	DISPATCH_KEYMGMT_ELEM(GETTABLE_PARAMS, ps_keymgmt_ec_gettable_params),
-	DISPATCH_KEYMGMT_ELEM(SET_PARAMS, ps_keymgmt_set_params),
-	DISPATCH_KEYMGMT_ELEM(SETTABLE_PARAMS, ps_keymgmt_ec_settable_params),
-
-	/* Import and export routines */
-	DISPATCH_KEYMGMT_ELEM(EXPORT, ps_keymgmt_export),
-	DISPATCH_KEYMGMT_ELEM(EXPORT_TYPES, ps_keymgmt_ec_export_types),
-	DISPATCH_KEYMGMT_ELEM(IMPORT, ps_keymgmt_import),
-	DISPATCH_KEYMGMT_ELEM(IMPORT_TYPES, ps_keymgmt_ec_import_types),
-	/* No copy function, OpenSSL will use export/import to copy instead */
-
-	{ 0, NULL }
-};
-
-static const OSSL_ALGORITHM ps_keymgmt[] = {
-	{ "RSA:rsaEncryption", "provider="PS_PROV_NAME,
-				ps_rsa_keymgmt_functions, NULL },
-	{ "RSA-PSS:RSASSA-PSS", "provider="PS_PROV_NAME,
-				ps_rsapss_keymgmt_functions, NULL },
-	{ "EC:id-ecPublicKey", "provider="PS_PROV_NAME,
-				ps_ec_keymgmt_functions, NULL },
 	{ NULL, NULL, NULL, NULL }
 };
 
@@ -4453,7 +3238,6 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 		       const OSSL_DISPATCH **out,
 		       void **vctx)
 {
-	const OSSL_DISPATCH **pout;
 	struct provider_ctx *pctx = NULL;
 	OSSL_PARAM core_params[4] = { 0 };
 	const char *module = NULL;

@@ -17,6 +17,7 @@ pkcs11sign_la_SOURCES = \
 	store.c store.h \
 	uri.c uri.h \
 	object.c object.h \
+	keymgmt.c keymgmt.h \
 	common.h
 
 pkcs11sign_la_CFLAGS = $(AM_CFLAGS) $(STD_FLAGS) $(OPENSSL_CFLAGS) -D_GNU_SOURCE
