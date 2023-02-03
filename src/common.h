@@ -62,4 +62,22 @@ struct provider_ctx {
 	struct pkcs11_module *pkcs11;
 };
 
+struct obj {
+	struct provider_ctx *pctx;
+	struct pkcs11_module *pkcs11;
+	CK_SLOT_ID slot_id;
+	char *pin;
+
+	CK_ATTRIBUTE_PTR attrs;
+	CK_ULONG nattrs;
+
+	unsigned int refcnt;
+
+	int type;
+	EVP_PKEY *fwd_key;
+
+	/* REVISIT */
+	unsigned char *secure_key;
+};
+
 #endif /* _PKCS11SIGN_COMMON_H */
