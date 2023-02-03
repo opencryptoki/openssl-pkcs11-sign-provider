@@ -6,26 +6,99 @@
 #include <stdbool.h>
 #include <openssl/store.h>
 #include <openssl/core_names.h>
+#include <openssl/core_object.h>
 
 #include "common.h"
 #include "provider.h"
 #include "debug.h"
 #include "pkcs11.h"
 #include "uri.h"
+#include "object.h"
+
+#define KEY_PARAMS	4
+
+static const int key_obj_type = OSSL_OBJECT_PKEY;
 
 struct store_ctx {
-	struct provider_ctx *provctx;
+	struct provider_ctx *pctx;
 	struct parsed_uri *puri;
 	struct pkcs11_module *pkcs11;
 	CK_SLOT_ID slot_id;
 	CK_SESSION_HANDLE session;
-	CK_OBJECT_HANDLE_PTR objects;
+	struct obj **objects;
 	CK_ULONG nobjects;
+	CK_ULONG load_idx;
 };
+
+static int key2params(struct obj *obj, OSSL_PARAM *params, unsigned int nparams)
+{
+	char *data_type;
+
+	CK_KEY_TYPE tmp;
+
+	if (nparams < KEY_PARAMS)
+		return OSSL_RV_ERR;
+
+	tmp = obj_get_key_type(obj);
+	switch (tmp) {
+	case CKK_RSA:
+		data_type = "RSA";
+		break;
+	case CKK_ECDSA:
+		data_type = "EC:id-ecPublicKey:1.2.840.10045.2.1";
+		break;
+	default:
+		return OSSL_RV_ERR;
+	}
+
+	params[0] = OSSL_PARAM_construct_int(OSSL_OBJECT_PARAM_TYPE, (int *)&key_obj_type);
+	params[1] = OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE,
+						     data_type, 0);
+	params[2] = OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE,
+						      obj_get(obj), sizeof(struct obj));
+	params[3] = OSSL_PARAM_construct_end();
+
+	return OSSL_RV_OK;
+}
+
+static int object2params(struct obj *obj, OSSL_PARAM *params, unsigned int nparams)
+{
+	if (!obj || !params)
+		return OSSL_RV_ERR;
+
+	switch (obj_get_class(obj)) {
+	case CKO_PUBLIC_KEY:
+	case CKO_PRIVATE_KEY:
+		return key2params(obj, params, nparams);
+	default:
+		return OSSL_RV_ERR;
+	}
+}
+
+static struct obj *get_next_loadable_object(struct store_ctx *sctx)
+{
+	if (!sctx)
+		return NULL;
+
+	while (sctx->load_idx < sctx->nobjects) {
+		struct obj *o = sctx->objects[sctx->load_idx++];
+
+		/* TODO add certificate support */
+		switch (obj_get_class(o)) {
+		case CKO_PUBLIC_KEY:
+		case CKO_PRIVATE_KEY:
+			return o;
+		default:
+			continue;
+		}
+	}
+
+	return NULL;
+}
 
 static int handle_pkcs11_module(struct store_ctx *sctx)
 {
-	struct dbg *dbg = &sctx->provctx->dbg;
+	struct dbg *dbg = &sctx->pctx->dbg;
 	struct parsed_uri *puri = sctx->puri;
 
 	if (puri->mod_path) {
@@ -41,7 +114,7 @@ static int handle_pkcs11_module(struct store_ctx *sctx)
 	}
 
 	if (!sctx->pkcs11) {
-		sctx->pkcs11 = pkcs11_module_get(sctx->provctx->pkcs11);
+		sctx->pkcs11 = pkcs11_module_get(sctx->pctx->pkcs11);
 	}
 
 	ps_dbg_info(dbg, "sctx: %p, use pkcs11-module %s",
@@ -140,110 +213,164 @@ static bool match_library_uri(struct pkcs11_module *pkcs11, struct parsed_uri *p
 	return true;
 }
 
-static int lookup_objects(struct store_ctx *sctx)
+static int load_object_handles(struct store_ctx *sctx,
+			       CK_OBJECT_HANDLE_PTR handles, CK_ULONG nhandles)
 {
-	struct dbg *dbg = &sctx->provctx->dbg;
+	struct provider_ctx *pctx = sctx->pctx;
+	struct dbg *dbg = &pctx->dbg;
 	struct pkcs11_module *pkcs11 = sctx->pkcs11;
-	struct parsed_uri *puri = sctx->puri;
-	CK_SLOT_ID_PTR slots = NULL;
-	CK_ULONG nslots = 0, i;
-	CK_RV rv;
+	struct obj **objs;
+	CK_ULONG nobjs, i;
 
-	if (!match_library_uri(pkcs11, puri)) {
-		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
-			     sctx);
-		return 1;
+	objs = OPENSSL_zalloc((sizeof(struct obj *) * nhandles));
+	if (!objs)
+		return OSSL_RV_ERR;
+	nobjs = nhandles;
+
+	for (i = 0; i < nhandles; i++) {
+		objs[i] = obj_new_init(pctx, pkcs11, sctx->slot_id,
+				       sctx->puri->pin);
+		if (!objs[i]) {
+			goto err;
+		}
+
+		if (pkcs11_fetch_attributes(sctx->pkcs11, sctx->session,
+					    handles[i], &objs[i]->attrs,
+					    &objs[i]->nattrs, dbg) != CKR_OK) {
+			ps_dbg_error(dbg, "sctx: %p, attribute lookup failed (handle: %lu)",
+				     sctx, handles[i]);
+			goto err;
+		}
 	}
 
-	rv = pkcs11_get_slots(pkcs11, &slots, &nslots, dbg);
-	if (rv != CKR_OK) {
-		ps_dbg_debug(dbg, "sctx: %p, no slots found",
-			     sctx);
-		return 1;
+	sctx->objects = objs;
+	sctx->nobjects = nobjs;
+
+	return OSSL_RV_OK;
+err:
+	for (i = 0; i < nobjs; i++) {
+		obj_free(objs[i]);
+	}
+	OPENSSL_free(objs);
+	return OSSL_RV_ERR;
+}
+
+static CK_SLOT_ID lookup_slot_id(struct pkcs11_module *pkcs11, struct parsed_uri *puri, struct dbg *dbg)
+{
+	CK_SLOT_ID_PTR slots;
+	CK_ULONG nslots, i;
+	CK_SLOT_ID found = CK_UNAVAILABLE_INFORMATION;
+	CK_SLOT_ID rv = CK_UNAVAILABLE_INFORMATION;
+
+	if (pkcs11_get_slots(pkcs11, &slots, &nslots, dbg) != CKR_OK) {
+		ps_dbg_debug(dbg, "%s: slot lookup failed",
+			     pkcs11->soname);
+		return rv;
 	}
 
 	for (i = 0; i < nslots; i++) {
 		CK_SLOT_ID sid = slots[i];
 
 		if (!match_slot_uri(pkcs11, sid, puri)) {
-			ps_dbg_debug(dbg, "sctx: %p, slot %lu: slot mismatch",
-				     sctx, sid);
+			ps_dbg_debug(dbg, "%s: slot %lu: slot mismatch",
+				     pkcs11->soname, sid);
 			continue;
 		}
 
 		if (!match_token_uri(pkcs11, sid, puri)) {
-			ps_dbg_debug(dbg, "sctx: %p, slot %lu: token mismatch",
-				     sctx, sid);
+			ps_dbg_debug(dbg, "%s: slot %lu: token mismatch",
+				     pkcs11->soname, sid);
 			continue;
 		}
 
-		if (sctx->slot_id != CK_UNAVAILABLE_INFORMATION) {
-			ps_dbg_debug(dbg, "sctx: %p, too many matching slots/tokens",
-				     sctx);
-			return 1;
+		if (found != CK_UNAVAILABLE_INFORMATION) {
+			ps_dbg_debug(dbg, "%s: too many matching slots/tokens (%lu, %lu)",
+				     pkcs11->soname, found, sid);
+			goto out;
 		}
 
-		sctx->slot_id = sid;
+		found = sid;
 	}
 
+	rv = found;
+out:
+	OPENSSL_free(slots);
+	return rv;
+}
+
+static int lookup_objects(struct store_ctx *sctx)
+{
+	struct dbg *dbg = &sctx->pctx->dbg;
+	struct pkcs11_module *pkcs11 = sctx->pkcs11;
+	struct parsed_uri *puri = sctx->puri;
+	CK_OBJECT_HANDLE_PTR handles = NULL;
+	CK_ULONG nhandles;
+	CK_RV ck_rv;
+
+	if (!match_library_uri(pkcs11, puri)) {
+		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
+			     sctx);
+		return OSSL_RV_ERR;
+	}
+
+	sctx->slot_id = lookup_slot_id(pkcs11, puri, dbg);
 	if (sctx->slot_id == CK_UNAVAILABLE_INFORMATION) {
 		ps_dbg_debug(dbg, "sctx: %p, no matching slot/token found",
 			     sctx);
-		return 1;
+		return OSSL_RV_ERR;
 	}
 
 	ps_dbg_debug(dbg, "sctx: %p, token in slot %lu selected",
 		     sctx, sctx->slot_id);
 
-	rv = pkcs11_session_open_login(pkcs11, sctx->slot_id, &sctx->session,
-				  puri->pin, dbg);
-	if (rv != CKR_OK) {
-		return 1;
+	ck_rv = pkcs11_session_open_login(pkcs11, sctx->slot_id, &sctx->session,
+				       puri->pin, dbg);
+	if (ck_rv != CKR_OK) {
+		return OSSL_RV_ERR;
 	}
 
-	rv = pkcs11_find_objects(pkcs11, sctx->session,
-				 puri->obj_object, puri->obj_id, puri->obj_type,
-				 &sctx->objects, &sctx->nobjects,
-				 dbg);
-	if (rv != CKR_OK) {
-		return 1;
+	ck_rv = pkcs11_find_objects(pkcs11, sctx->session,
+				    puri->obj_object, puri->obj_id, puri->obj_type,
+				    &handles, &nhandles,
+				    dbg);
+	if (ck_rv != CKR_OK) {
+		return OSSL_RV_ERR;
 	}
 
-	if (sctx->nobjects == 0) {
-		ps_dbg_error(dbg, "%s: no objects found in slot %d",
+	if (nhandles== 0) {
+		ps_dbg_error(dbg, "sctx: %p, no objects found in slot %d",
 			     sctx, sctx->slot_id);
-		return 1;
+		goto err;
 	}
 
-	/* TODO tolerate up to 3 objects (max 1 of priv, pub and cert) */
-	if (sctx->nobjects > 1) {
-		ps_dbg_error(dbg, "%s: too many (%d) objects found in slot %d",
-			     sctx, sctx->nobjects, sctx->slot_id);
-		OPENSSL_free(sctx->objects);
-		sctx->objects = NULL_PTR;
-		sctx->nobjects = 0;
-		return 1;
-	}
+	sctx->load_idx = 0;
+	return load_object_handles(sctx, handles, nhandles);
 
-	return 0;
+err:
+	OPENSSL_free(handles);
+	return OSSL_RV_ERR;
+
 }
 
 static void ps_store_ctx_free(struct store_ctx *sctx)
 {
+	CK_ULONG i;
+
 	if (!sctx)
 		return;
 
-	sctx->provctx = NULL;
-
 	pkcs11_module_free(sctx->pkcs11);
 	parsed_uri_free(sctx->puri);
+	for (i = 0; i < sctx->nobjects; i++) {
+		obj_free(sctx->objects[i]);
+	}
 	OPENSSL_free(sctx);
 }
 
-static struct store_ctx *store_ctx_init(struct provider_ctx *provctx,
+static struct store_ctx *store_ctx_init(struct provider_ctx *pctx,
 					   const char *uri)
 {
-	struct dbg *dbg = &provctx->dbg;
+	struct dbg *dbg = &pctx->dbg;
 	struct store_ctx *sctx;
 
 	sctx = OPENSSL_zalloc(sizeof(struct store_ctx));
@@ -252,17 +379,17 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *provctx,
 
 	sctx->puri = parsed_uri_new(uri);
 	if (!sctx->puri) {
-		ps_dbg_error(dbg, "provctx: %p, parsed_uri_new() failed. uri: %s",
-			     provctx, uri);
+		ps_dbg_error(dbg, "pctx: %p, parsed_uri_new() failed. uri: %s",
+			     pctx, uri);
 		ps_store_ctx_free(sctx);
 		return NULL;
 	}
 
-	sctx->provctx = provctx;
+	sctx->pctx = pctx;
 
 	if (handle_pkcs11_module(sctx)) {
-		ps_dbg_error(dbg, "provctx: %p, pkcs11 module handling failed. uri: %s",
-			     provctx, uri);
+		ps_dbg_error(dbg, "pctx: %p, pkcs11 module handling failed. uri: %s",
+			     pctx, uri);
 		ps_store_ctx_free(sctx);
 		return NULL;
 	}
@@ -286,63 +413,79 @@ DISPATCH_STORE_FN(settable_ctx_params, ps_store_settable_ctx_params);
 
 static void *ps_store_open(void *vpctx, const char *uri)
 {
-	struct provider_ctx *provctx = (struct provider_ctx *)vpctx;
-	struct dbg *dbg = &provctx->dbg;
+	struct provider_ctx *pctx = (struct provider_ctx *)vpctx;
+	struct dbg *dbg;
 	struct store_ctx *sctx;
 
-	if (!provctx || !uri)
+	if (!pctx || !uri)
 		return NULL;
+	dbg = &pctx->dbg;
 
-	ps_dbg_debug(dbg, "entry: provctx: %p",
-		     provctx);
+	ps_dbg_debug(dbg, "entry: pctx: %p",
+		     pctx);
 
-	sctx = store_ctx_init(provctx, uri);
+	sctx = store_ctx_init(pctx, uri);
 	if (!sctx)
 		return NULL;
 
-	if (lookup_objects(sctx)) {
+	if (lookup_objects(sctx) != OSSL_RV_OK) {
 		ps_store_ctx_free(sctx);
 		return NULL;
 	}
 
-	ps_dbg_debug(dbg, "exit: sctx: %p, provctx: %p",
-		     sctx, provctx);
+	ps_dbg_debug(dbg, "exit: sctx: %p, pctx: %p",
+		     sctx, pctx);
 
 	return sctx;
 }
 
 static int ps_store_load(void *vctx,
-			 OSSL_CALLBACK *object_cb __attribute__((unused)),
-			 void *object_cbarg __attribute__((unused)),
+			 OSSL_CALLBACK *object_cb,
+			 void *object_cbarg,
 			 OSSL_PASSPHRASE_CALLBACK *pw_cb __attribute__((unused)),
 			 void *pw_cbarg __attribute__((unused)))
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
 	struct dbg *dbg;
+	struct obj *obj;
+	OSSL_PARAM params[KEY_PARAMS];
 
 	if (!sctx)
 		return OSSL_RV_ERR;
-	dbg = &sctx->provctx->dbg;
+	dbg = &sctx->pctx->dbg;
 
-	ps_dbg_debug(dbg, "sctx: %p, provctx: %p, entry",
-		     sctx, sctx->provctx);
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
+		     sctx, sctx->pctx);
 
-	return OSSL_RV_ERR;
+	obj = get_next_loadable_object(sctx);
+	if (!obj)
+		return OSSL_RV_ERR;
+
+	if (object2params(obj, params, KEY_PARAMS) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
+	return object_cb(params, object_cbarg);
 }
 
 static int ps_store_eof(void *vctx)
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
 	struct dbg *dbg;
+	int rv;
 
 	if (!sctx)
 		return 1;
-	dbg = &sctx->provctx->dbg;
+	dbg = &sctx->pctx->dbg;
 
-	ps_dbg_debug(dbg, "sctx: %p, provctx: %p, entry",
-		     sctx, sctx->provctx);
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
+		     sctx, sctx->pctx);
 
-	return OSSL_RV_ERR;
+	rv = (sctx->load_idx >= sctx->nobjects);
+
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, exit: %d",
+		     sctx, sctx->pctx, rv);
+
+	return rv;
 }
 
 static int ps_store_close(void *vctx)
@@ -352,26 +495,32 @@ static int ps_store_close(void *vctx)
 
 	if (!sctx)
 		return OSSL_RV_ERR;
-	dbg = &sctx->provctx->dbg;
+	dbg = &sctx->pctx->dbg;
 
-	ps_dbg_debug(dbg, "sctx: %p, provctx: %p",
-		     sctx, sctx->provctx);
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
+		     sctx, sctx->pctx);
 
 	pkcs11_session_close(sctx->pkcs11, &sctx->session, dbg);
 
 	ps_store_ctx_free(sctx);
 
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, exit",
+		     sctx, sctx->pctx);
+
 	return OSSL_RV_OK;
 }
 
-static int ps_store_export_object(void *loaderctx, const void *reference,
-				  size_t reference_sz,
-				  OSSL_CALLBACK *cb_fn, void *cb_arg)
+static int ps_store_export_object(void *loaderctx __attribute__((unused)),
+				  const void *reference __attribute__((unused)),
+				  size_t reference_sz __attribute__((unused)),
+				  OSSL_CALLBACK *cb_fn __attribute__((unused)),
+				  void *cb_arg __attribute__((unused)))
 {
+	/* TODO export public keys and certificates */
 	return OSSL_RV_ERR;
 }
 
-static const OSSL_PARAM *ps_store_settable_ctx_params(void *provctx)
+static const OSSL_PARAM *ps_store_settable_ctx_params(void *pctx __attribute__((unused)))
 {
 	static const OSSL_PARAM known_settable_ctx_params[] = {
 		OSSL_PARAM_int(OSSL_STORE_PARAM_EXPECT, NULL),
@@ -388,7 +537,8 @@ static const OSSL_PARAM *ps_store_settable_ctx_params(void *provctx)
 	return known_settable_ctx_params;
 }
 
-static int ps_store_set_ctx_params(void *pctx, const OSSL_PARAM params[])
+static int ps_store_set_ctx_params(void *pctx __attribute__((unused)),
+				   const OSSL_PARAM params[] __attribute__((unused)))
 {
 	return OSSL_RV_ERR;
 }
