@@ -13,10 +13,10 @@
 size_t pkcs11_strlen(const CK_CHAR_PTR c, CK_ULONG csize);
 int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize);
 
-CK_RV pkcs11_object_attributes(struct pkcs11_module *pkcs11,
-			       CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
-			       CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
-			       struct dbg *dbg);
+CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
+			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
+			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
+			      struct dbg *dbg);
 CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 			  CK_SESSION_HANDLE session,
 			  const char *label, const char *id, const char *type,

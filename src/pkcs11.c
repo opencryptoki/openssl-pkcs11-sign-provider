@@ -108,10 +108,10 @@ int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize)
 	return strncmp(s, (const char *)c, pkcs11_strlen(c, csize));
 }
 
-CK_RV pkcs11_object_attributes(struct pkcs11_module *pkcs11,
-			       CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
-			       CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
-			       struct dbg *dbg)
+CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
+			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
+			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
+			      struct dbg *dbg)
 {
 	CK_ATTRIBUTE template[] = {
 		{ .type = CKA_LABEL },
