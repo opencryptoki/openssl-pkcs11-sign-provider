@@ -33,7 +33,6 @@ static EVP_PKEY *uri_pkey_get1(const char *uri)
 		ERR_print_errors_fp(stderr);
 		exit(EXIT_FAILURE);
 	}
-	goto close;
 
 	while (!OSSL_STORE_eof(sctx)) {
 		OSSL_STORE_INFO *info = OSSL_STORE_load(sctx);
@@ -59,7 +58,7 @@ static EVP_PKEY *uri_pkey_get1(const char *uri)
 		OSSL_STORE_close(sctx);
 		exit(EXIT_FAILURE);
 	}
-close:
+
 	OSSL_STORE_close(sctx);
 	return pkey;
 }
@@ -126,6 +125,7 @@ int main(void)
 	pkey = uri_pkey_get1(uri);
 	fprintf(stderr, "Pkey load works: uri: %s, pkey: %p\n",
 		uri, pkey);
+	goto out;
 
 	configure_context(ctx, pkey, cert);
 	fprintf(stderr, "Context configuration works: uri: %s, cert: %s\n",
@@ -137,6 +137,7 @@ int main(void)
 	 * - handle connections (in a loop)
 	 */
 
+out:
 	EVP_PKEY_free(pkey);
 	SSL_CTX_free(ctx);
 
