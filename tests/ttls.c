@@ -40,6 +40,7 @@ static EVP_PKEY *uri_pkey_get1(const char *uri)
 		if (!info) {
 			fprintf(stderr, "OSSL_STORE_load() failed: uri=%s\n", uri);
 			ERR_print_errors_fp(stderr);
+			OSSL_STORE_close(sctx);
 			exit(EXIT_FAILURE);
 		}
 
@@ -55,6 +56,7 @@ static EVP_PKEY *uri_pkey_get1(const char *uri)
 	if (!pkey) {
 		fprintf(stderr, "OSSL_STORE_INFO_PKEY not found: uri=%s\n", uri);
 		ERR_print_errors_fp(stderr);
+		OSSL_STORE_close(sctx);
 		exit(EXIT_FAILURE);
 	}
 close:
