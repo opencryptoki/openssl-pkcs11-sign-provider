@@ -14,6 +14,20 @@
 
 #include "common.h"
 
+#define PS_ERR_INTERNAL_ERROR			1
+#define PS_ERR_MALLOC_FAILED			2
+#define PS_ERR_INVALID_PARAM			3
+#define PS_ERR_DEFAULT_PROV_FUNC_MISSING	4
+#define PS_ERR_DEFAULT_PROV_FUNC_FAILED		5
+#define PS_ERR_OPRATION_NOT_INITIALIZED		6
+#define PS_ERR_MISSING_PARAMETER		7
+#define PS_ERR_INVALID_PADDING			8
+#define PS_ERR_INVALID_MD			9
+#define PS_ERR_INVALID_SALTLEN			10
+#define PS_ERR_SECURE_KEY_FUNC_FAILED		11
+
+extern const OSSL_ITEM ps_prov_reason_strings[];
+
 #define put_error_pctx(pctx, err, fmt...)			\
 	do {							\
 		ps_dbg_error(&pctx->dbg, fmt);			\

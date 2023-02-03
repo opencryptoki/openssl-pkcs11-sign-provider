@@ -213,39 +213,6 @@ DISPATCH_ASYMCIPHER(settable_ctx_params, ps_asym_settable_ctx_params);
 
 DISPATCH_ASYMCIPHER(freectx, ps_op_freectx);
 
-#define PS_ERR_INTERNAL_ERROR		1
-#define PS_ERR_MALLOC_FAILED		2
-#define PS_ERR_INVALID_PARAM		3
-#define PS_ERR_DEFAULT_PROV_FUNC_MISSING	4
-#define PS_ERR_DEFAULT_PROV_FUNC_FAILED	5
-#define PS_ERR_OPRATION_NOT_INITIALIZED	6
-#define PS_ERR_MISSING_PARAMETER		7
-#define PS_ERR_INVALID_PADDING		8
-#define PS_ERR_INVALID_MD			9
-#define PS_ERR_INVALID_SALTLEN		10
-#define PS_ERR_SECURE_KEY_FUNC_FAILED	11
-
-static const OSSL_ITEM ps_prov_reason_strings[] = {
-	{ PS_ERR_INTERNAL_ERROR,	"Internal error" },
-	{ PS_ERR_MALLOC_FAILED,	"Memory allocation failed" },
-	{ PS_ERR_INVALID_PARAM,	"Invalid parameter encountered" },
-	{ PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-		"A function inherited from default provider is missing" },
-	{ PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-		"A function inherited from default provider has failed" },
-	{ PS_ERR_OPRATION_NOT_INITIALIZED,
-		"An operation context has not been initialized" },
-	{ PS_ERR_MISSING_PARAMETER,
-		"A parameter of a key or a context is missing" },
-	{ PS_ERR_INVALID_PADDING,
-		"An invalid or unknown padding is used" },
-	{ PS_ERR_INVALID_MD, "An invalid or unknown digest is used" },
-	{ PS_ERR_INVALID_SALTLEN, "An invalid salt length is used" },
-	{ PS_ERR_SECURE_KEY_FUNC_FAILED,
-		"A secure key function has failed" },
-	{0, NULL }
-};
-
 static void ps_keymgmt_upref(struct ps_key *key);
 static struct ps_key *ps_keymgmt_new(struct provider_ctx *pctx,
 					       int type);
