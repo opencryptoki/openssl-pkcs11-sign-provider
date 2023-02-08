@@ -824,40 +824,40 @@ static const OSSL_PARAM *ps_keymgmt_rsa_gen_settable_params(void *vgenctx,
 	return ps_keymgmt_gen_settable_params(octx, EVP_PKEY_RSA);
 }
 
-#define DISPATCH_KEYMGMT_ELEM(NAME, name) \
+#define DISP_KMGMT_ELEM(NAME, name) \
 	{ OSSL_FUNC_KEYMGMT_##NAME, (void (*)(void))name }
 
 static const OSSL_DISPATCH ps_keymgmt_functions_rsa[] = {
 	/* Constructor, destructor */
-	DISPATCH_KEYMGMT_ELEM(NEW,		ps_keymgmt_rsa_new),
-	DISPATCH_KEYMGMT_ELEM(FREE,		ps_keymgmt_free),
+	DISP_KMGMT_ELEM(NEW,		ps_keymgmt_rsa_new),
+	DISP_KMGMT_ELEM(FREE,		ps_keymgmt_free),
 
 	/* Key generation and loading */
-	DISPATCH_KEYMGMT_ELEM(GEN_INIT,		ps_keymgmt_rsa_gen_init),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_TEMPLATE,	ps_keymgmt_gen_set_template),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_PARAMS,	ps_keymgmt_gen_set_params),
-	DISPATCH_KEYMGMT_ELEM(GEN_SETTABLE_PARAMS, ps_keymgmt_rsa_gen_settable_params),
-	DISPATCH_KEYMGMT_ELEM(GEN,		ps_keymgmt_gen),
-	DISPATCH_KEYMGMT_ELEM(GEN_CLEANUP,	ps_keymgmt_gen_cleanup),
-	DISPATCH_KEYMGMT_ELEM(LOAD,		ps_keymgmt_load),
+	DISP_KMGMT_ELEM(GEN_INIT,		ps_keymgmt_rsa_gen_init),
+	DISP_KMGMT_ELEM(GEN_SET_TEMPLATE,	ps_keymgmt_gen_set_template),
+	DISP_KMGMT_ELEM(GEN_SET_PARAMS,		ps_keymgmt_gen_set_params),
+	DISP_KMGMT_ELEM(GEN_SETTABLE_PARAMS,	ps_keymgmt_rsa_gen_settable_params),
+	DISP_KMGMT_ELEM(GEN,			ps_keymgmt_gen),
+	DISP_KMGMT_ELEM(GEN_CLEANUP,		ps_keymgmt_gen_cleanup),
+	DISP_KMGMT_ELEM(LOAD,			ps_keymgmt_load),
 
 	/* Key object checking */
-	DISPATCH_KEYMGMT_ELEM(HAS,		ps_keymgmt_has),
-	DISPATCH_KEYMGMT_ELEM(MATCH,		ps_keymgmt_match),
-	DISPATCH_KEYMGMT_ELEM(VALIDATE,		ps_keymgmt_validate),
-	DISPATCH_KEYMGMT_ELEM(QUERY_OPERATION_NAME, ps_keymgmt_rsa_query_operation_name),
+	DISP_KMGMT_ELEM(HAS,			ps_keymgmt_has),
+	DISP_KMGMT_ELEM(MATCH,			ps_keymgmt_match),
+	DISP_KMGMT_ELEM(VALIDATE,		ps_keymgmt_validate),
+	DISP_KMGMT_ELEM(QUERY_OPERATION_NAME,	ps_keymgmt_rsa_query_operation_name),
 
 	/* Key object information */
-	DISPATCH_KEYMGMT_ELEM(GET_PARAMS,	ps_keymgmt_get_params),
-	DISPATCH_KEYMGMT_ELEM(GETTABLE_PARAMS,	ps_keymgmt_rsa_gettable_params),
-	DISPATCH_KEYMGMT_ELEM(SET_PARAMS,	ps_keymgmt_set_params),
-	DISPATCH_KEYMGMT_ELEM(SETTABLE_PARAMS,	ps_keymgmt_rsa_settable_params),
+	DISP_KMGMT_ELEM(GET_PARAMS,		ps_keymgmt_get_params),
+	DISP_KMGMT_ELEM(GETTABLE_PARAMS,	ps_keymgmt_rsa_gettable_params),
+	DISP_KMGMT_ELEM(SET_PARAMS,		ps_keymgmt_set_params),
+	DISP_KMGMT_ELEM(SETTABLE_PARAMS,	ps_keymgmt_rsa_settable_params),
 
 	/* Import and export routines */
-	DISPATCH_KEYMGMT_ELEM(EXPORT,		ps_keymgmt_export),
-	DISPATCH_KEYMGMT_ELEM(EXPORT_TYPES,	ps_keymgmt_rsa_export_types),
-	DISPATCH_KEYMGMT_ELEM(IMPORT,		ps_keymgmt_import),
-	DISPATCH_KEYMGMT_ELEM(IMPORT_TYPES,	ps_keymgmt_rsa_import_types),
+	DISP_KMGMT_ELEM(EXPORT,			ps_keymgmt_export),
+	DISP_KMGMT_ELEM(EXPORT_TYPES,		ps_keymgmt_rsa_export_types),
+	DISP_KMGMT_ELEM(IMPORT,			ps_keymgmt_import),
+	DISP_KMGMT_ELEM(IMPORT_TYPES,		ps_keymgmt_rsa_import_types),
 	/* No copy function, OpenSSL will use export/import to copy instead */
 
 	{ 0, NULL }
@@ -943,35 +943,35 @@ static const OSSL_PARAM *ps_keymgmt_rsapss_gen_settable_params(void *vgenctx,
 
 static const OSSL_DISPATCH ps_keymgmt_functions_rsapss[] = {
 	/* Constructor, destructor */
-	DISPATCH_KEYMGMT_ELEM(NEW,		ps_keymgmt_rsapss_new),
-	DISPATCH_KEYMGMT_ELEM(FREE,		ps_keymgmt_free),
+	DISP_KMGMT_ELEM(NEW,			ps_keymgmt_rsapss_new),
+	DISP_KMGMT_ELEM(FREE,			ps_keymgmt_free),
 
 	/* Key generation and loading */
-	DISPATCH_KEYMGMT_ELEM(GEN_INIT,		ps_keymgmt_rsapss_gen_init),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_TEMPLATE,	ps_keymgmt_gen_set_template),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_PARAMS,	ps_keymgmt_gen_set_params),
-	DISPATCH_KEYMGMT_ELEM(GEN_SETTABLE_PARAMS, ps_keymgmt_rsapss_gen_settable_params),
-	DISPATCH_KEYMGMT_ELEM(GEN,		ps_keymgmt_gen),
-	DISPATCH_KEYMGMT_ELEM(GEN_CLEANUP,	ps_keymgmt_gen_cleanup),
-	DISPATCH_KEYMGMT_ELEM(LOAD,		ps_keymgmt_load),
+	DISP_KMGMT_ELEM(GEN_INIT,		ps_keymgmt_rsapss_gen_init),
+	DISP_KMGMT_ELEM(GEN_SET_TEMPLATE,	ps_keymgmt_gen_set_template),
+	DISP_KMGMT_ELEM(GEN_SET_PARAMS,		ps_keymgmt_gen_set_params),
+	DISP_KMGMT_ELEM(GEN_SETTABLE_PARAMS,	ps_keymgmt_rsapss_gen_settable_params),
+	DISP_KMGMT_ELEM(GEN,			ps_keymgmt_gen),
+	DISP_KMGMT_ELEM(GEN_CLEANUP,		ps_keymgmt_gen_cleanup),
+	DISP_KMGMT_ELEM(LOAD,			ps_keymgmt_load),
 
 	/* Key object checking */
-	DISPATCH_KEYMGMT_ELEM(HAS,		ps_keymgmt_has),
-	DISPATCH_KEYMGMT_ELEM(MATCH,		ps_keymgmt_match),
-	DISPATCH_KEYMGMT_ELEM(VALIDATE,		ps_keymgmt_validate),
-	DISPATCH_KEYMGMT_ELEM(QUERY_OPERATION_NAME, ps_keymgmt_rsa_query_operation_name),
+	DISP_KMGMT_ELEM(HAS,			ps_keymgmt_has),
+	DISP_KMGMT_ELEM(MATCH,			ps_keymgmt_match),
+	DISP_KMGMT_ELEM(VALIDATE,		ps_keymgmt_validate),
+	DISP_KMGMT_ELEM(QUERY_OPERATION_NAME,	ps_keymgmt_rsa_query_operation_name),
 
 	/* Key object information */
-	DISPATCH_KEYMGMT_ELEM(GET_PARAMS,	ps_keymgmt_get_params),
-	DISPATCH_KEYMGMT_ELEM(GETTABLE_PARAMS,	ps_keymgmt_rsapss_gettable_params),
-	DISPATCH_KEYMGMT_ELEM(SET_PARAMS,	ps_keymgmt_set_params),
-	DISPATCH_KEYMGMT_ELEM(SETTABLE_PARAMS,	ps_keymgmt_rsapss_settable_params),
+	DISP_KMGMT_ELEM(GET_PARAMS,		ps_keymgmt_get_params),
+	DISP_KMGMT_ELEM(GETTABLE_PARAMS,	ps_keymgmt_rsapss_gettable_params),
+	DISP_KMGMT_ELEM(SET_PARAMS,		ps_keymgmt_set_params),
+	DISP_KMGMT_ELEM(SETTABLE_PARAMS,	ps_keymgmt_rsapss_settable_params),
 
 	/* Import and export routines */
-	DISPATCH_KEYMGMT_ELEM(EXPORT,		ps_keymgmt_export),
-	DISPATCH_KEYMGMT_ELEM(EXPORT_TYPES,	ps_keymgmt_rsapss_export_types),
-	DISPATCH_KEYMGMT_ELEM(IMPORT,		ps_keymgmt_import),
-	DISPATCH_KEYMGMT_ELEM(IMPORT_TYPES,	ps_keymgmt_rsapss_import_types),
+	DISP_KMGMT_ELEM(EXPORT,			ps_keymgmt_export),
+	DISP_KMGMT_ELEM(EXPORT_TYPES,		ps_keymgmt_rsapss_export_types),
+	DISP_KMGMT_ELEM(IMPORT,			ps_keymgmt_import),
+	DISP_KMGMT_ELEM(IMPORT_TYPES,		ps_keymgmt_rsapss_import_types),
 	/* No copy function, OpenSSL will use export/import to copy instead */
 
 	{ 0, NULL }
@@ -1070,35 +1070,35 @@ static const OSSL_PARAM *ps_keymgmt_ec_gen_settable_params(void *vopctx,
 
 static const OSSL_DISPATCH ps_keymgmt_functions_ec[] = {
 	/* Constructor, destructor */
-	DISPATCH_KEYMGMT_ELEM(NEW,		ps_keymgmt_ec_new),
-	DISPATCH_KEYMGMT_ELEM(FREE,		ps_keymgmt_free),
+	DISP_KMGMT_ELEM(NEW,			ps_keymgmt_ec_new),
+	DISP_KMGMT_ELEM(FREE,			ps_keymgmt_free),
 
 	/* Key generation and loading */
-	DISPATCH_KEYMGMT_ELEM(GEN_INIT,		ps_keymgmt_ec_gen_init),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_TEMPLATE,	ps_keymgmt_gen_set_template),
-	DISPATCH_KEYMGMT_ELEM(GEN_SET_PARAMS,	ps_keymgmt_gen_set_params),
-	DISPATCH_KEYMGMT_ELEM(GEN_SETTABLE_PARAMS, ps_keymgmt_ec_gen_settable_params),
-	DISPATCH_KEYMGMT_ELEM(GEN,		ps_keymgmt_gen),
-	DISPATCH_KEYMGMT_ELEM(GEN_CLEANUP,	ps_keymgmt_gen_cleanup),
-	DISPATCH_KEYMGMT_ELEM(LOAD,		ps_keymgmt_load),
+	DISP_KMGMT_ELEM(GEN_INIT,		ps_keymgmt_ec_gen_init),
+	DISP_KMGMT_ELEM(GEN_SET_TEMPLATE,	ps_keymgmt_gen_set_template),
+	DISP_KMGMT_ELEM(GEN_SET_PARAMS,		ps_keymgmt_gen_set_params),
+	DISP_KMGMT_ELEM(GEN_SETTABLE_PARAMS,	ps_keymgmt_ec_gen_settable_params),
+	DISP_KMGMT_ELEM(GEN,			ps_keymgmt_gen),
+	DISP_KMGMT_ELEM(GEN_CLEANUP,		ps_keymgmt_gen_cleanup),
+	DISP_KMGMT_ELEM(LOAD,			ps_keymgmt_load),
 
 	/* Key object checking */
-	DISPATCH_KEYMGMT_ELEM(HAS,		ps_keymgmt_has),
-	DISPATCH_KEYMGMT_ELEM(MATCH,		ps_keymgmt_match),
-	DISPATCH_KEYMGMT_ELEM(VALIDATE,		ps_keymgmt_validate),
-	DISPATCH_KEYMGMT_ELEM(QUERY_OPERATION_NAME, ps_keymgmt_ec_query_operation_name),
+	DISP_KMGMT_ELEM(HAS,			ps_keymgmt_has),
+	DISP_KMGMT_ELEM(MATCH,			ps_keymgmt_match),
+	DISP_KMGMT_ELEM(VALIDATE,		ps_keymgmt_validate),
+	DISP_KMGMT_ELEM(QUERY_OPERATION_NAME,	ps_keymgmt_ec_query_operation_name),
 
 	/* Key object information */
-	DISPATCH_KEYMGMT_ELEM(GET_PARAMS,	ps_keymgmt_get_params),
-	DISPATCH_KEYMGMT_ELEM(GETTABLE_PARAMS,	ps_keymgmt_ec_gettable_params),
-	DISPATCH_KEYMGMT_ELEM(SET_PARAMS,	ps_keymgmt_set_params),
-	DISPATCH_KEYMGMT_ELEM(SETTABLE_PARAMS,	ps_keymgmt_ec_settable_params),
+	DISP_KMGMT_ELEM(GET_PARAMS,		ps_keymgmt_get_params),
+	DISP_KMGMT_ELEM(GETTABLE_PARAMS,	ps_keymgmt_ec_gettable_params),
+	DISP_KMGMT_ELEM(SET_PARAMS,		ps_keymgmt_set_params),
+	DISP_KMGMT_ELEM(SETTABLE_PARAMS,	ps_keymgmt_ec_settable_params),
 
 	/* Import and export routines */
-	DISPATCH_KEYMGMT_ELEM(EXPORT,		ps_keymgmt_export),
-	DISPATCH_KEYMGMT_ELEM(EXPORT_TYPES,	ps_keymgmt_ec_export_types),
-	DISPATCH_KEYMGMT_ELEM(IMPORT,		ps_keymgmt_import),
-	DISPATCH_KEYMGMT_ELEM(IMPORT_TYPES,	ps_keymgmt_ec_import_types),
+	DISP_KMGMT_ELEM(EXPORT,			ps_keymgmt_export),
+	DISP_KMGMT_ELEM(EXPORT_TYPES,		ps_keymgmt_ec_export_types),
+	DISP_KMGMT_ELEM(IMPORT,			ps_keymgmt_import),
+	DISP_KMGMT_ELEM(IMPORT_TYPES,		ps_keymgmt_ec_import_types),
 	/* No copy function, OpenSSL will use export/import to copy instead */
 
 	{ 0, NULL }
