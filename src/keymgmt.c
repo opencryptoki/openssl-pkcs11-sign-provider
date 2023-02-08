@@ -112,8 +112,8 @@ DISP_KMGMT_FN(validate,		ps_keymgmt_validate);
 DISP_KMGMT_FN(export,		ps_keymgmt_export);
 DISP_KMGMT_FN(import,		ps_keymgmt_import);
 
-static struct obj *ps_keymgmt_new(struct provider_ctx *pctx,
-				  int type)
+static struct obj *keymgmt_new(struct provider_ctx *pctx,
+			       int type)
 {
 	OSSL_FUNC_keymgmt_new_fn *fwd_new_fn;
 	struct dbg *dbg;
@@ -751,7 +751,7 @@ static void *ps_keymgmt_rsa_new(void *vpctx)
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
 
-	return ps_keymgmt_new(pctx, EVP_PKEY_RSA);
+	return keymgmt_new(pctx, EVP_PKEY_RSA);
 }
 
 static const char *ps_keymgmt_rsa_query_operation_name(int operation_id)
@@ -879,7 +879,7 @@ static void *ps_keymgmt_rsapss_new(void *vprovctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_new(pctx, EVP_PKEY_RSA_PSS);
+	return keymgmt_new(pctx, EVP_PKEY_RSA_PSS);
 }
 
 static const OSSL_PARAM *ps_keymgmt_rsapss_gettable_params(void *vprovctx)
@@ -994,7 +994,7 @@ static void *ps_keymgmt_ec_new(void *vpctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_new(pctx, EVP_PKEY_EC);
+	return keymgmt_new(pctx, EVP_PKEY_EC);
 }
 
 static const char *ps_keymgmt_ec_query_operation_name(int operation_id)
