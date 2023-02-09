@@ -97,20 +97,23 @@ out:
 	return 1;
 }
 
-#define DISP_KMGMT_FN(tname, name) DECL_DISPATCH_FUNC(keymgmt, tname, name)
-DISP_KMGMT_FN(free,		ps_keymgmt_free);
-DISP_KMGMT_FN(gen_cleanup,	ps_keymgmt_gen_cleanup);
-DISP_KMGMT_FN(load,		ps_keymgmt_load);
-DISP_KMGMT_FN(gen_set_template,	ps_keymgmt_gen_set_template);
-DISP_KMGMT_FN(gen_set_params,	ps_keymgmt_gen_set_params);
-DISP_KMGMT_FN(gen,		ps_keymgmt_gen);
-DISP_KMGMT_FN(get_params,	ps_keymgmt_get_params);
-DISP_KMGMT_FN(set_params,	ps_keymgmt_set_params);
-DISP_KMGMT_FN(has,		ps_keymgmt_has);
-DISP_KMGMT_FN(match,		ps_keymgmt_match);
-DISP_KMGMT_FN(validate,		ps_keymgmt_validate);
-DISP_KMGMT_FN(export,		ps_keymgmt_export);
-DISP_KMGMT_FN(import,		ps_keymgmt_import);
+static EVP_PKEY *keymgmt_fetch_pkey(const struct obj *key, int selection)
+{
+	if (key->fwd_key)
+		return key->fwd_key;
+
+	if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) {
+		/* not supported */
+		return NULL;
+	}
+
+	if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) {
+		/* TODO create pkey from obj */
+		return NULL;
+	}
+
+	return NULL;
+}
 
 static struct obj *keymgmt_new(struct provider_ctx *pctx,
 			       int type)
@@ -159,6 +162,166 @@ err:
 	obj_free(key);
 	return NULL;
 }
+
+static const OSSL_PARAM *keymgmt_gettable_params(struct provider_ctx *pctx,
+						 int type)
+{
+	OSSL_FUNC_keymgmt_gettable_params_fn *fwd_gettable_params_fn;
+	struct dbg *dbg = &pctx->dbg;
+
+	ps_dbg_debug(dbg, "pctx: %p, type: %d",
+		     pctx, type);
+
+	fwd_gettable_params_fn = (OSSL_FUNC_keymgmt_gettable_params_fn *)
+		fwd_keymgmt_get_func(&pctx->fwd, type,
+				     OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS,
+				     &pctx->dbg);
+
+	/* fwd_gettable_params_fn is optional */
+	return (fwd_gettable_params_fn) ?
+		fwd_gettable_params_fn(pctx->fwd.ctx) :
+		NULL;
+}
+
+static const OSSL_PARAM *keymgmt_settable_params(struct provider_ctx *pctx,
+						 int type)
+{
+	OSSL_FUNC_keymgmt_settable_params_fn *fwd_settable_params_fn;
+	struct dbg *dbg = &pctx->dbg;
+
+	ps_dbg_debug(dbg, "pctx: %p, type: %d",
+		     pctx, type);
+
+	fwd_settable_params_fn = (OSSL_FUNC_keymgmt_settable_params_fn *)
+		fwd_keymgmt_get_func(&pctx->fwd, type,
+				     OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS,
+				     &pctx->dbg);
+
+	/* fwd_settable_params_fn is optional */
+	return (fwd_settable_params_fn) ?
+		fwd_settable_params_fn(fwd_settable_params_fn) :
+		NULL;
+}
+
+static const OSSL_PARAM *keymgmt_export_types(int selection,
+					      int type)
+{
+	/* not supported */
+	return NULL;
+}
+
+static const OSSL_PARAM *keymgmt_import_types(int selection,
+					      int type)
+{
+	/* not supported */
+	return NULL;
+}
+
+static struct op_ctx *keymgmt_gen_init(struct provider_ctx *pctx, int selection,
+				       const OSSL_PARAM params[], int type)
+{
+	OSSL_FUNC_keymgmt_gen_cleanup_fn *fwd_gen_cleanup_fn;
+	OSSL_FUNC_keymgmt_gen_init_fn *fwd_gen_init_fn;
+	struct dbg *dbg = &pctx->dbg;
+	struct op_ctx *octx;
+	const OSSL_PARAM *p;
+
+	ps_dbg_debug(dbg, "pctx: %p, selection: %d, type: %d",
+		     pctx, selection, type);
+
+	for (p = params; (p && p->key); p++)
+		ps_dbg_debug(dbg, "param: %s", p->key);
+
+	fwd_gen_init_fn = (OSSL_FUNC_keymgmt_gen_init_fn *)
+		fwd_keymgmt_get_func(&pctx->fwd, type,
+				     OSSL_FUNC_KEYMGMT_GEN_INIT,
+				     &pctx->dbg);
+	if (!fwd_gen_init_fn) {
+		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+			       "no default gen_init_fn");
+		return NULL;
+	}
+
+	fwd_gen_cleanup_fn = (OSSL_FUNC_keymgmt_gen_cleanup_fn *)
+		fwd_keymgmt_get_func(&pctx->fwd, type,
+				     OSSL_FUNC_KEYMGMT_GEN_CLEANUP,
+				     &pctx->dbg);
+	if (fwd_gen_cleanup_fn == NULL) {
+		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+			       "no default gen_cleanup_fn");
+		return NULL;
+	}
+
+	octx = op_ctx_new(pctx, NULL, type);
+	if (!octx) {
+		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
+			       "ps_op_newctx failed");
+		return NULL;
+	}
+
+	if (!op_ctx_init(octx, NULL, EVP_PKEY_OP_KEYGEN)) {
+		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
+			       "ps_op_init failed");
+		op_ctx_free(octx);
+		return NULL;
+	}
+
+	octx->fwd_op_ctx = fwd_gen_init_fn(pctx->fwd.ctx,
+					   selection, params);
+	if (octx->fwd_op_ctx == NULL) {
+		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+			       "fwd_gen_init_fn failed");
+		op_ctx_free(octx);
+		return NULL;
+	}
+	octx->fwd_op_ctx_free = fwd_gen_cleanup_fn;
+
+	ps_dbg_debug(&pctx->dbg, "octx: %p", octx);
+	return octx;
+}
+
+static const OSSL_PARAM *keymgmt_gen_settable_params(struct op_ctx *octx,
+						     int type)
+{
+	OSSL_FUNC_keymgmt_gen_settable_params_fn *fwd_gen_settable_params_fn;
+
+	if (octx)
+		return NULL;
+
+	ps_dbg_debug(&octx->pctx->dbg, "pctx: %p, octx: %p, type: %d",
+		     octx->pctx, octx, type);
+
+	if (octx->fwd_op_ctx)
+		goto fwd;
+
+	/* not supported */
+	return NULL;
+
+fwd:
+	fwd_gen_settable_params_fn = (OSSL_FUNC_keymgmt_gen_settable_params_fn *)
+		fwd_keymgmt_get_func(&octx->pctx->fwd,
+				     type, OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS,
+				     &octx->pctx->dbg);
+
+	return (fwd_gen_settable_params_fn) ?
+		fwd_gen_settable_params_fn(octx->fwd_op_ctx, octx->pctx->fwd.ctx) :
+		NULL;
+}
+
+#define DISP_KMGMT_FN(tname, name) DECL_DISPATCH_FUNC(keymgmt, tname, name)
+DISP_KMGMT_FN(free,		ps_keymgmt_free);
+DISP_KMGMT_FN(gen_cleanup,	ps_keymgmt_gen_cleanup);
+DISP_KMGMT_FN(load,		ps_keymgmt_load);
+DISP_KMGMT_FN(gen_set_template,	ps_keymgmt_gen_set_template);
+DISP_KMGMT_FN(gen_set_params,	ps_keymgmt_gen_set_params);
+DISP_KMGMT_FN(gen,		ps_keymgmt_gen);
+DISP_KMGMT_FN(get_params,	ps_keymgmt_get_params);
+DISP_KMGMT_FN(set_params,	ps_keymgmt_set_params);
+DISP_KMGMT_FN(has,		ps_keymgmt_has);
+DISP_KMGMT_FN(match,		ps_keymgmt_match);
+DISP_KMGMT_FN(validate,		ps_keymgmt_validate);
+DISP_KMGMT_FN(export,		ps_keymgmt_export);
+DISP_KMGMT_FN(import,		ps_keymgmt_import);
 
 static void ps_keymgmt_free(void *vkey)
 {
@@ -333,54 +496,6 @@ fwd:
 	return OSSL_RV_OK;
 }
 
-static const OSSL_PARAM *ps_keymgmt_gettable_params(
-				struct provider_ctx *pctx, int type)
-{
-	OSSL_FUNC_keymgmt_gettable_params_fn *fwd_gettable_params_fn;
-	struct dbg *dbg;
-
-	if (pctx == NULL)
-		return NULL;
-	dbg = &pctx->dbg;
-
-	ps_dbg_debug(dbg, "pctx: %p, type: %d",
-		     pctx, type);
-
-	fwd_gettable_params_fn = (OSSL_FUNC_keymgmt_gettable_params_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, type,
-				     OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS,
-				     &pctx->dbg);
-
-	/* fwd_gettable_params_fn is optional */
-	return (fwd_gettable_params_fn) ?
-		fwd_gettable_params_fn(pctx->fwd.ctx) :
-		NULL;
-}
-
-static const OSSL_PARAM *ps_keymgmt_settable_params(
-				struct provider_ctx *pctx, int type)
-{
-	OSSL_FUNC_keymgmt_settable_params_fn *fwd_settable_params_fn;
-	struct dbg *dbg;
-
-	if (pctx == NULL)
-		return NULL;
-	dbg = &pctx->dbg;
-
-	ps_dbg_debug(dbg, "pctx: %p, type: %d",
-		     pctx, type);
-
-	fwd_settable_params_fn = (OSSL_FUNC_keymgmt_settable_params_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, type,
-				     OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS,
-				     &pctx->dbg);
-
-	/* fwd_settable_params_fn is optional */
-	return (fwd_settable_params_fn) ?
-		fwd_settable_params_fn(fwd_settable_params_fn) :
-		NULL;
-}
-
 static int ps_keymgmt_has(const void *vkey, int selection)
 {
 	OSSL_FUNC_keymgmt_has_fn *fwd_has_fn;
@@ -492,84 +607,6 @@ fwd:
 	return OSSL_RV_OK;
 }
 
-static const OSSL_PARAM *ps_keymgmt_export_types(int selection,
-						 int type)
-{
-	/* not supported */
-	return NULL;
-}
-
-static const OSSL_PARAM *ps_keymgmt_import_types(int selection,
-						 int type)
-{
-	/* not supported */
-	return NULL;
-}
-
-static struct op_ctx *ps_keymgmt_gen_init(
-				struct provider_ctx *pctx, int selection,
-				const OSSL_PARAM params[], int type)
-{
-	OSSL_FUNC_keymgmt_gen_cleanup_fn *fwd_gen_cleanup_fn;
-	OSSL_FUNC_keymgmt_gen_init_fn *fwd_gen_init_fn;
-	struct dbg *dbg = &pctx->dbg;
-	struct op_ctx *octx;
-	const OSSL_PARAM *p;
-
-	ps_dbg_debug(dbg, "pctx: %p, selection: %d, type: %d",
-		     pctx, selection, type);
-
-	for (p = params; (p && p->key); p++)
-		ps_dbg_debug(dbg, "param: %s", p->key);
-
-	fwd_gen_init_fn = (OSSL_FUNC_keymgmt_gen_init_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, type,
-				     OSSL_FUNC_KEYMGMT_GEN_INIT,
-				     &pctx->dbg);
-	if (!fwd_gen_init_fn) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default gen_init_fn");
-		return NULL;
-	}
-
-	fwd_gen_cleanup_fn = (OSSL_FUNC_keymgmt_gen_cleanup_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, type,
-				     OSSL_FUNC_KEYMGMT_GEN_CLEANUP,
-				     &pctx->dbg);
-	if (fwd_gen_cleanup_fn == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default gen_cleanup_fn");
-		return NULL;
-	}
-
-	octx = op_ctx_new(pctx, NULL, type);
-	if (!octx) {
-		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
-			       "ps_op_newctx failed");
-		return NULL;
-	}
-
-	if (!op_ctx_init(octx, NULL, EVP_PKEY_OP_KEYGEN)) {
-		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
-			       "ps_op_init failed");
-		op_ctx_free(octx);
-		return NULL;
-	}
-
-	octx->fwd_op_ctx = fwd_gen_init_fn(pctx->fwd.ctx,
-					   selection, params);
-	if (octx->fwd_op_ctx == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			       "fwd_gen_init_fn failed");
-		op_ctx_free(octx);
-		return NULL;
-	}
-	octx->fwd_op_ctx_free = fwd_gen_cleanup_fn;
-
-	ps_dbg_debug(&pctx->dbg, "octx: %p", octx);
-	return octx;
-}
-
 static void ps_keymgmt_gen_cleanup(void *vgenctx)
 {
 	struct op_ctx *octx = vgenctx;
@@ -611,35 +648,6 @@ static int ps_keymgmt_gen_set_params(void *vgenctx,
 	}
 
 	return OSSL_RV_OK;
-}
-
-static const OSSL_PARAM *ps_keymgmt_gen_settable_params(
-					struct op_ctx *octx,
-					int type)
-{
-	OSSL_FUNC_keymgmt_gen_settable_params_fn *fwd_gen_settable_params_fn;
-
-	if (octx)
-		return NULL;
-
-	ps_dbg_debug(&octx->pctx->dbg, "pctx: %p, octx: %p, type: %d",
-		     octx->pctx, octx, type);
-
-	if (octx->fwd_op_ctx)
-		goto fwd;
-
-	/* not supported */
-	return NULL;
-
-fwd:
-	fwd_gen_settable_params_fn = (OSSL_FUNC_keymgmt_gen_settable_params_fn *)
-		fwd_keymgmt_get_func(&octx->pctx->fwd,
-				     type, OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS,
-				     &octx->pctx->dbg);
-
-	return (fwd_gen_settable_params_fn) ?
-		fwd_gen_settable_params_fn(octx->fwd_op_ctx, octx->pctx->fwd.ctx) :
-		NULL;
 }
 
 static int ps_keymgmt_gen_set_template(void *vgenctx, void *vtempl)
@@ -765,63 +773,62 @@ static const char *ps_keymgmt_rsa_query_operation_name(int operation_id)
 	return NULL;
 }
 
-static const OSSL_PARAM *ps_keymgmt_rsa_gettable_params(void *vprovctx)
+static const OSSL_PARAM *ps_keymgmt_rsa_gettable_params(void *vpctx)
 {
-	struct provider_ctx *pctx = vprovctx;
+	struct provider_ctx *pctx = vpctx;
 
 	if (!pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gettable_params(pctx, EVP_PKEY_RSA);
+	return keymgmt_gettable_params(pctx, EVP_PKEY_RSA);
 }
 
-static const OSSL_PARAM *ps_keymgmt_rsa_settable_params(void *vprovctx)
+static const OSSL_PARAM *ps_keymgmt_rsa_settable_params(void *vpctx)
 {
-	struct provider_ctx *pctx = vprovctx;
+	struct provider_ctx *pctx = vpctx;
 
-	if (pctx == NULL)
+	if (!pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_settable_params(pctx, EVP_PKEY_RSA);
+	return keymgmt_settable_params(pctx, EVP_PKEY_RSA);
 }
 
 static const OSSL_PARAM *ps_keymgmt_rsa_export_types(int selection)
 {
-	return ps_keymgmt_export_types(selection, EVP_PKEY_RSA);
+	return keymgmt_export_types(selection, EVP_PKEY_RSA);
 }
 
 static const OSSL_PARAM *ps_keymgmt_rsa_import_types(int selection)
 {
-	return ps_keymgmt_import_types(selection, EVP_PKEY_RSA);
+	return keymgmt_import_types(selection, EVP_PKEY_RSA);
 }
 
-static void *ps_keymgmt_rsa_gen_init(void *vprovctx, int selection,
+static void *ps_keymgmt_rsa_gen_init(void *vpctx, int selection,
 				     const OSSL_PARAM params[])
 {
-	struct provider_ctx *pctx = vprovctx;
+	struct provider_ctx *pctx = vpctx;
 
 	if (!pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_init(pctx, selection, params,
-				   EVP_PKEY_RSA);
+	return keymgmt_gen_init(pctx, selection, params, EVP_PKEY_RSA);
 }
 
-static const OSSL_PARAM *ps_keymgmt_rsa_gen_settable_params(void *vgenctx,
-							    void *vprovctx)
+static const OSSL_PARAM *ps_keymgmt_rsa_gen_settable_params(void *vopctx,
+							    void *vpctx)
 {
-	struct op_ctx *octx = vgenctx;
-	struct provider_ctx *pctx = vprovctx;
+	struct op_ctx *octx = vopctx;
+	struct provider_ctx *pctx = vpctx;
 
-	if (!pctx)
+	if (!pctx || !octx || octx->pctx != pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
 
-	return ps_keymgmt_gen_settable_params(octx, EVP_PKEY_RSA);
+	return keymgmt_gen_settable_params(octx, EVP_PKEY_RSA);
 }
 
 #define DISP_KMGMT_ELEM(NAME, name) \
@@ -882,15 +889,15 @@ static void *ps_keymgmt_rsapss_new(void *vprovctx)
 	return keymgmt_new(pctx, EVP_PKEY_RSA_PSS);
 }
 
-static const OSSL_PARAM *ps_keymgmt_rsapss_gettable_params(void *vprovctx)
+static const OSSL_PARAM *ps_keymgmt_rsapss_gettable_params(void *vpctx)
 {
-	struct provider_ctx *pctx = vprovctx;
+	struct provider_ctx *pctx = vpctx;
 
 	if (!pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gettable_params(pctx, EVP_PKEY_RSA_PSS);
+	return keymgmt_gettable_params(pctx, EVP_PKEY_RSA_PSS);
 }
 
 static const OSSL_PARAM *ps_keymgmt_rsapss_settable_params(void *vprovctx)
@@ -901,17 +908,17 @@ static const OSSL_PARAM *ps_keymgmt_rsapss_settable_params(void *vprovctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_settable_params(pctx, EVP_PKEY_RSA_PSS);
+	return keymgmt_settable_params(pctx, EVP_PKEY_RSA_PSS);
 }
 
 static const OSSL_PARAM *ps_keymgmt_rsapss_export_types(int selection)
 {
-	return ps_keymgmt_export_types(selection, EVP_PKEY_RSA_PSS);
+	return keymgmt_export_types(selection, EVP_PKEY_RSA_PSS);
 }
 
 static const OSSL_PARAM *ps_keymgmt_rsapss_import_types(int selection)
 {
-	return ps_keymgmt_import_types(selection, EVP_PKEY_RSA_PSS);
+	return keymgmt_import_types(selection, EVP_PKEY_RSA_PSS);
 }
 
 static void *ps_keymgmt_rsapss_gen_init(void *vpctx, int selection,
@@ -923,22 +930,21 @@ static void *ps_keymgmt_rsapss_gen_init(void *vpctx, int selection,
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_init(pctx, selection, params,
-				   EVP_PKEY_RSA_PSS);
+	return keymgmt_gen_init(pctx, selection, params, EVP_PKEY_RSA_PSS);
 }
 
-static const OSSL_PARAM *ps_keymgmt_rsapss_gen_settable_params(void *vgenctx,
+static const OSSL_PARAM *ps_keymgmt_rsapss_gen_settable_params(void *vopctx,
 							       void *vpctx)
 {
-	struct op_ctx *octx = vgenctx;
+	struct op_ctx *octx = vopctx;
 	struct provider_ctx *pctx = vpctx;
 
-	if (!pctx)
+	if (!pctx || !octx || octx->pctx != pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
 
-	return ps_keymgmt_gen_settable_params(octx, EVP_PKEY_RSA_PSS);
+	return keymgmt_gen_settable_params(octx, EVP_PKEY_RSA_PSS);
 }
 
 static const OSSL_DISPATCH ps_keymgmt_functions_rsapss[] = {
@@ -1017,7 +1023,7 @@ static const OSSL_PARAM *ps_keymgmt_ec_gettable_params(void *vpctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gettable_params(pctx, EVP_PKEY_EC);
+	return keymgmt_gettable_params(pctx, EVP_PKEY_EC);
 }
 
 static const OSSL_PARAM *ps_keymgmt_ec_settable_params(void *vpctx)
@@ -1028,17 +1034,17 @@ static const OSSL_PARAM *ps_keymgmt_ec_settable_params(void *vpctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_settable_params(pctx, EVP_PKEY_EC);
+	return keymgmt_settable_params(pctx, EVP_PKEY_EC);
 }
 
 static const OSSL_PARAM *ps_keymgmt_ec_export_types(int selection)
 {
-	return ps_keymgmt_export_types(selection, EVP_PKEY_EC);
+	return keymgmt_export_types(selection, EVP_PKEY_EC);
 }
 
 static const OSSL_PARAM *ps_keymgmt_ec_import_types(int selection)
 {
-	return ps_keymgmt_import_types(selection, EVP_PKEY_EC);
+	return keymgmt_import_types(selection, EVP_PKEY_EC);
 }
 
 static void *ps_keymgmt_ec_gen_init(void *vpctx, int selection,
@@ -1050,7 +1056,7 @@ static void *ps_keymgmt_ec_gen_init(void *vpctx, int selection,
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
-	return ps_keymgmt_gen_init(pctx, selection, params,
+	return keymgmt_gen_init(pctx, selection, params,
 				   EVP_PKEY_EC);
 }
 
@@ -1060,12 +1066,12 @@ static const OSSL_PARAM *ps_keymgmt_ec_gen_settable_params(void *vopctx,
 	struct op_ctx *octx = vopctx;
 	struct provider_ctx *pctx = vpctx;
 
-	if (!pctx)
+	if (!pctx || !octx || octx->pctx != pctx)
 		return NULL;
 
 	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
 
-	return ps_keymgmt_gen_settable_params(octx, EVP_PKEY_EC);
+	return keymgmt_gen_settable_params(octx, EVP_PKEY_EC);
 }
 
 static const OSSL_DISPATCH ps_keymgmt_functions_ec[] = {
