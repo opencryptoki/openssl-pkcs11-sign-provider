@@ -13,6 +13,11 @@
 size_t pkcs11_strlen(const CK_CHAR_PTR c, CK_ULONG csize);
 int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize);
 
+void pkcs11_attr_deepfree(CK_ATTRIBUTE_PTR attribute);
+void pkcs11_attrs_deepfree(CK_ATTRIBUTE_PTR attributes, CK_ULONG nattributes);
+CK_RV pkcs11_attr_dup(const CK_ATTRIBUTE_PTR src, CK_ATTRIBUTE_PTR dst);
+CK_ATTRIBUTE_PTR pkcs11_attrs_dup(CK_ATTRIBUTE_PTR src, CK_ULONG n);
+
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
 			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,

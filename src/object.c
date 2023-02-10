@@ -61,6 +61,7 @@ static void _obj_free(struct obj *obj)
 	pkcs11_module_free(obj->pkcs11);
 
 	OPENSSL_free(obj->pin);
+	pkcs11_attrs_deepfree(obj->attrs, obj->nattrs);
 	OPENSSL_free(obj->attrs);
 	OPENSSL_free(obj);
 }

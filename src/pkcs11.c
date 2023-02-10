@@ -108,6 +108,62 @@ int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize)
 	return strncmp(s, (const char *)c, pkcs11_strlen(c, csize));
 }
 
+void pkcs11_attr_deepfree(CK_ATTRIBUTE_PTR attribute)
+{
+	if (!attribute)
+		return;
+
+	if (attribute->ulValueLen)
+		OPENSSL_free(attribute->pValue);
+	attribute->ulValueLen = 0;
+}
+
+void pkcs11_attrs_deepfree(CK_ATTRIBUTE_PTR attributes, CK_ULONG nattributes)
+{
+	CK_ULONG i;
+
+	for (i = 0; i < nattributes; i++)
+		pkcs11_attr_deepfree(&attributes[i]);
+}
+
+CK_RV pkcs11_attr_dup(const CK_ATTRIBUTE_PTR src, CK_ATTRIBUTE_PTR dst)
+{
+	if (!src || !dst ||
+	    !src->pValue || !src->ulValueLen)
+		return CKR_ARGUMENTS_BAD;
+
+	dst->pValue = OPENSSL_memdup(src->pValue, src->ulValueLen);
+	if (!dst->pValue)
+		return CKR_HOST_MEMORY;
+
+	dst->type = src->type;
+	dst->ulValueLen = src->ulValueLen;
+	return CKR_OK;
+}
+
+CK_ATTRIBUTE_PTR pkcs11_attrs_dup(CK_ATTRIBUTE_PTR src, CK_ULONG n)
+{
+	CK_ATTRIBUTE_PTR dst;
+	CK_ULONG i;
+
+	if (!src)
+		return NULL;
+
+	dst = OPENSSL_zalloc(sizeof(CK_ATTRIBUTE) * n);
+	if (!dst)
+		return NULL;
+
+	for (i = 0; i < n; i++) {
+		if (pkcs11_attr_dup(&src[i], &dst[i]) != CKR_OK) {
+			pkcs11_attrs_deepfree(dst, n);
+			OPENSSL_free(dst);
+			return NULL;
+		}
+	}
+
+	return dst;
+}
+
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
 			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
@@ -148,7 +204,7 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 		goto err;
 	}
 
-	attrs = OPENSSL_memdup(template, sizeof(template));
+	attrs = pkcs11_attrs_dup(template, nattrs);
 	if (!attrs) {
 		rv = CKR_HOST_MEMORY;
 		goto err;
@@ -160,9 +216,7 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 
 err:
-	for (i = 0; i < nattrs; i++) {
-		OPENSSL_free(template[i].pValue);
-	}
+	pkcs11_attrs_deepfree(template, nattrs);
 	return rv;
 }
 
