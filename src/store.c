@@ -399,17 +399,14 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *pctx,
 	return sctx;
 }
 
-#define DISPATCH_STORE_FN(tname, name) DECL_DISPATCH_FUNC(store, tname, name)
-#define DISPATCH_STORE_ELEM(NAME, name) \
-	{ OSSL_FUNC_STORE_##NAME, (void (*)(void))name }
-
-DISPATCH_STORE_FN(open, ps_store_open);
-DISPATCH_STORE_FN(load, ps_store_load);
-DISPATCH_STORE_FN(eof, ps_store_eof);
-DISPATCH_STORE_FN(close, ps_store_close);
-DISPATCH_STORE_FN(export_object, ps_store_export_object);
-DISPATCH_STORE_FN(set_ctx_params, ps_store_set_ctx_params);
-DISPATCH_STORE_FN(settable_ctx_params, ps_store_settable_ctx_params);
+#define DISP_STORE_FN(tname, name) DECL_DISPATCH_FUNC(store, tname, name)
+DISP_STORE_FN(open, ps_store_open);
+DISP_STORE_FN(load, ps_store_load);
+DISP_STORE_FN(eof, ps_store_eof);
+DISP_STORE_FN(close, ps_store_close);
+DISP_STORE_FN(export_object, ps_store_export_object);
+DISP_STORE_FN(set_ctx_params, ps_store_set_ctx_params);
+DISP_STORE_FN(settable_ctx_params, ps_store_settable_ctx_params);
 
 static void *ps_store_open(void *vpctx, const char *uri)
 {
@@ -543,14 +540,16 @@ static int ps_store_set_ctx_params(void *pctx __attribute__((unused)),
 	return OSSL_RV_ERR;
 }
 
+#define DISP_STORE_ELEM(NAME, name) \
+	{ OSSL_FUNC_STORE_##NAME, (void (*)(void))name }
 static const OSSL_DISPATCH ps_store_funcs[] = {
-	DISPATCH_STORE_ELEM(OPEN, ps_store_open),
-	DISPATCH_STORE_ELEM(LOAD, ps_store_load),
-	DISPATCH_STORE_ELEM(EOF, ps_store_eof),
-	DISPATCH_STORE_ELEM(CLOSE, ps_store_close),
-	DISPATCH_STORE_ELEM(SET_CTX_PARAMS, ps_store_set_ctx_params),
-	DISPATCH_STORE_ELEM(SETTABLE_CTX_PARAMS, ps_store_settable_ctx_params),
-	DISPATCH_STORE_ELEM(EXPORT_OBJECT, ps_store_export_object),
+	DISP_STORE_ELEM(OPEN, ps_store_open),
+	DISP_STORE_ELEM(LOAD, ps_store_load),
+	DISP_STORE_ELEM(EOF, ps_store_eof),
+	DISP_STORE_ELEM(CLOSE, ps_store_close),
+	DISP_STORE_ELEM(SET_CTX_PARAMS, ps_store_set_ctx_params),
+	DISP_STORE_ELEM(SETTABLE_CTX_PARAMS, ps_store_settable_ctx_params),
+	DISP_STORE_ELEM(EXPORT_OBJECT, ps_store_export_object),
 	{ 0, NULL },
 };
 
