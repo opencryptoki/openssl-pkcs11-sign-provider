@@ -11,6 +11,10 @@
 #include <openssl/core_dispatch.h>
 #include <opencryptoki/pkcs11types.h>
 
+#define __unused		__attribute__((unused))
+
+#define OSSL_RV_TRUE	(1)
+#define OSSL_RV_FALSE	(0)
 #define OSSL_RV_OK	(1)
 #define OSSL_RV_ERR	(0)
 
