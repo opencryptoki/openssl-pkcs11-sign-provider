@@ -9,7 +9,8 @@
 #include "debug.h"
 #include "pkcs11.h"
 
-static CK_ATTRIBUTE *get_attribute(struct obj *obj, CK_ATTRIBUTE_TYPE type)
+static CK_ATTRIBUTE *get_attribute(const struct obj *obj,
+				   CK_ATTRIBUTE_TYPE type)
 {
 	CK_ULONG i;
 
@@ -24,7 +25,7 @@ static CK_ATTRIBUTE *get_attribute(struct obj *obj, CK_ATTRIBUTE_TYPE type)
 	return NULL;
 }
 
-CK_KEY_TYPE obj_get_key_type(struct obj *obj)
+CK_KEY_TYPE obj_get_key_type(const struct obj *obj)
 {
 	CK_ATTRIBUTE_PTR attr;
 
@@ -38,7 +39,7 @@ CK_KEY_TYPE obj_get_key_type(struct obj *obj)
 	return *(CK_KEY_TYPE *)attr->pValue;
 }
 
-CK_OBJECT_CLASS obj_get_class(struct obj *obj)
+CK_OBJECT_CLASS obj_get_class(const struct obj *obj)
 {
 	CK_ATTRIBUTE_PTR attr;
 

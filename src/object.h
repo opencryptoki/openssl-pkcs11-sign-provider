@@ -10,8 +10,8 @@
 #include "debug.h"
 #include "pkcs11.h"
 
-CK_KEY_TYPE obj_get_key_type(struct obj *obj);
-CK_OBJECT_CLASS obj_get_class(struct obj *obj);
+CK_KEY_TYPE obj_get_key_type(const struct obj *obj);
+CK_OBJECT_CLASS obj_get_class(const struct obj *obj);
 
 void obj_free(struct obj *obj);
 struct obj *obj_get(struct obj *obj);
