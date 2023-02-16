@@ -96,7 +96,7 @@ static void configure_context(SSL_CTX *ctx, EVP_PKEY *pkey,
 		exit(EXIT_FAILURE);
 	}
 
-	if (SSL_CTX_use_PrivateKey(ctx, pkey)) {
+	if (SSL_CTX_use_PrivateKey(ctx, pkey) <= 0) {
 		fprintf(stderr, "SSL_CTX_use_PrivateKey() failed: ctx=%p, pkey=%p\n",
 			ctx, pkey);
 		ERR_print_errors_fp(stderr);
