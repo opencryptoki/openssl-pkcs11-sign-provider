@@ -193,6 +193,9 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 	}
 
 	for (i = 0; i < nattrs; i++) {
+		if (!template[i].ulValueLen)
+			continue;
+
 		template[i].pValue = OPENSSL_zalloc(template[i].ulValueLen);
 		if (!template[i].pValue) {
 			rv = CKR_HOST_MEMORY;
