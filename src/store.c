@@ -75,6 +75,39 @@ static int object2params(struct obj *obj, OSSL_PARAM *params, unsigned int npara
 	}
 }
 
+static int get_object_params_rsa(struct store_ctx *sctx, struct obj *obj, CK_OBJECT_CLASS class)
+{
+	return OSSL_RV_OK;
+}
+
+static int get_object_params_ec(struct store_ctx *sctx, struct obj *obj, CK_OBJECT_CLASS class)
+{
+	return OSSL_RV_OK;
+}
+
+static int get_object_params(struct store_ctx *sctx, struct obj *obj)
+{
+	CK_KEY_TYPE type;
+	CK_OBJECT_CLASS class;
+
+	type = obj_get_key_type(obj);
+	class = obj_get_class(obj);
+
+	switch (type) {
+	case CKK_RSA:
+		obj->type = EVP_PKEY_RSA;
+		return get_object_params_rsa(sctx, obj, class);
+	case CKK_EC:
+		obj->type = EVP_PKEY_EC;
+		return get_object_params_ec(sctx, obj, class);
+	default:
+		/* other types are not supported */
+		break;
+	}
+
+	return OSSL_RV_ERR;
+}
+
 static struct obj *get_next_loadable_object(struct store_ctx *sctx)
 {
 	if (!sctx)
@@ -238,6 +271,12 @@ static int load_object_handles(struct store_ctx *sctx,
 					    handles[i], &objs[i]->attrs,
 					    &objs[i]->nattrs, dbg) != CKR_OK) {
 			ps_dbg_error(dbg, "sctx: %p, attribute lookup failed (handle: %lu)",
+				     sctx, handles[i]);
+			goto err;
+		}
+
+		if (get_object_params(sctx, objs[i]) != OSSL_RV_OK) {
+			ps_dbg_error(dbg, "sctx: %p, params lookup failed (handle: %lu)",
 				     sctx, handles[i]);
 			goto err;
 		}

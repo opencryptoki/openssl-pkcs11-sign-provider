@@ -75,6 +75,8 @@ struct obj {
 	CK_ATTRIBUTE_PTR attrs;
 	CK_ULONG nattrs;
 
+	OSSL_PARAM *params;	/* NULL-terminated */
+
 	unsigned int refcnt;
 
 	int type;
