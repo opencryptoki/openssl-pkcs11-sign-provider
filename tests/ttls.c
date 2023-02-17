@@ -125,7 +125,6 @@ int main(void)
 	pkey = uri_pkey_get1(uri);
 	fprintf(stderr, "Pkey load works: uri: %s, pkey: %p\n",
 		uri, pkey);
-	goto out;
 
 	configure_context(ctx, pkey, cert);
 	fprintf(stderr, "Context configuration works: uri: %s, cert: %s\n",
@@ -137,7 +136,6 @@ int main(void)
 	 * - handle connections (in a loop)
 	 */
 
-out:
 	EVP_PKEY_free(pkey);
 	SSL_CTX_free(ctx);
 
