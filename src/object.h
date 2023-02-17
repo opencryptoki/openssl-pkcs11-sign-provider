@@ -10,6 +10,8 @@
 #include "debug.h"
 #include "pkcs11.h"
 
+int obj_get_pub_key_info(const struct obj *obj, CK_BYTE_PTR *info, CK_ULONG_PTR infolen);
+int obj_get_id(const struct obj *obj, CK_BYTE_PTR *id, CK_ULONG_PTR idlen);
 CK_KEY_TYPE obj_get_key_type(const struct obj *obj);
 CK_OBJECT_CLASS obj_get_class(const struct obj *obj);
 

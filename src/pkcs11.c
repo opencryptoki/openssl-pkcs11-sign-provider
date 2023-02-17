@@ -174,6 +174,8 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 		{ .type = CKA_ID },
 		{ .type = CKA_CLASS },
 		{ .type = CKA_KEY_TYPE },
+		{ .type = CKA_PRIVATE },
+		{ .type = CKA_PUBLIC_KEY_INFO },
 	};
 	CK_ULONG nattrs = sizeof(template) / sizeof(template[0]);
 	CK_ULONG i;

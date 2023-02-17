@@ -25,6 +25,40 @@ static CK_ATTRIBUTE *get_attribute(const struct obj *obj,
 	return NULL;
 }
 
+int obj_get_pub_key_info(const struct obj *obj, CK_BYTE_PTR *info, CK_ULONG_PTR infolen)
+{
+	CK_ATTRIBUTE_PTR attr;
+
+	if (!obj)
+		return OSSL_RV_ERR;
+
+	attr = get_attribute(obj, CKA_PUBLIC_KEY_INFO);
+	if (!attr)
+		return OSSL_RV_ERR;
+
+	*info = (CK_BYTE_PTR)attr->pValue;
+	*infolen = attr->ulValueLen;
+
+	return OSSL_RV_OK;
+}
+
+int obj_get_id(const struct obj *obj, CK_BYTE_PTR *id, CK_ULONG_PTR idlen)
+{
+	CK_ATTRIBUTE_PTR attr;
+
+	if (!obj)
+		return OSSL_RV_ERR;
+
+	attr = get_attribute(obj, CKA_ID);
+	if (!attr)
+		return OSSL_RV_ERR;
+
+	*id = (CK_BYTE_PTR)attr->pValue;
+	*idlen = attr->ulValueLen;
+
+	return OSSL_RV_OK;
+}
+
 CK_KEY_TYPE obj_get_key_type(const struct obj *obj)
 {
 	CK_ATTRIBUTE_PTR attr;
