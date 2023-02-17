@@ -3,7 +3,7 @@
 
 EXTRA_DIST = provider.exports
 
-AM_CPPFLAGS = -I$(top_srcdir)/include
+AM_CPPFLAGS = $(STD_CFLAGS) -I$(top_srcdir)/include
 
 SHARED_EXT=@SHARED_EXT@
 

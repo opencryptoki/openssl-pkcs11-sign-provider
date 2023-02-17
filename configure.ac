@@ -28,6 +28,7 @@ PKG_CHECK_MODULES(
 )
 
 # Compile flags
+CFLAGS="-g -Og"
 AX_CHECK_COMPILE_FLAG(
 	[-std=c99],
 	[CFLAGS="$CFLAGS -std=c99"],
@@ -44,3 +45,4 @@ AC_CONFIG_FILES([Makefile
                  tests/Makefile])
 AC_OUTPUT
 echo CFLAGS=$CFLAGS
+echo STD_CFLAGS=$STD_CFLAGS
