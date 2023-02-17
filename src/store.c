@@ -439,8 +439,8 @@ static void *ps_store_open(void *vpctx, const char *uri)
 static int ps_store_load(void *vctx,
 			 OSSL_CALLBACK *object_cb,
 			 void *object_cbarg,
-			 OSSL_PASSPHRASE_CALLBACK *pw_cb __attribute__((unused)),
-			 void *pw_cbarg __attribute__((unused)))
+			 OSSL_PASSPHRASE_CALLBACK *pw_cb __unused,
+			 void *pw_cbarg __unused)
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
 	struct dbg *dbg;
@@ -507,17 +507,26 @@ static int ps_store_close(void *vctx)
 	return OSSL_RV_OK;
 }
 
-static int ps_store_export_object(void *loaderctx __attribute__((unused)),
-				  const void *reference __attribute__((unused)),
-				  size_t reference_sz __attribute__((unused)),
-				  OSSL_CALLBACK *cb_fn __attribute__((unused)),
-				  void *cb_arg __attribute__((unused)))
+static int ps_store_export_object(void *vctx ,
+				  const void *reference, size_t reference_sz,
+				  OSSL_CALLBACK *cb_fn __unused,
+				  void *cb_arg __unused)
 {
+	struct store_ctx *sctx = (struct store_ctx *)vctx;
+	struct dbg *dbg;
+
+	if (!sctx)
+		return OSSL_RV_ERR;
+	dbg = &sctx->pctx->dbg;
+
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, reference %p, reference_sz: %lu",
+		     sctx, sctx->pctx, reference, reference_sz);
+
 	/* TODO export public keys and certificates */
 	return OSSL_RV_ERR;
 }
 
-static const OSSL_PARAM *ps_store_settable_ctx_params(void *pctx __attribute__((unused)))
+static const OSSL_PARAM *ps_store_settable_ctx_params(void *pctx __unused)
 {
 	static const OSSL_PARAM known_settable_ctx_params[] = {
 		OSSL_PARAM_int(OSSL_STORE_PARAM_EXPECT, NULL),
@@ -534,9 +543,21 @@ static const OSSL_PARAM *ps_store_settable_ctx_params(void *pctx __attribute__((
 	return known_settable_ctx_params;
 }
 
-static int ps_store_set_ctx_params(void *pctx __attribute__((unused)),
-				   const OSSL_PARAM params[] __attribute__((unused)))
+static int ps_store_set_ctx_params(void *vctx,
+				   const OSSL_PARAM params[])
 {
+	struct store_ctx *sctx = (struct store_ctx *)vctx;
+	const OSSL_PARAM *p;
+	struct dbg *dbg;
+
+	if (!sctx)
+		return OSSL_RV_ERR;
+	dbg = &sctx->pctx->dbg;
+
+	ps_dbg_debug(dbg, "sctx: %p", sctx);
+	for (p = params; (p && p->key); p++)
+		ps_dbg_debug(dbg, "param: %s (0x%x)", p->key, p->data_type);
+
 	return OSSL_RV_ERR;
 }
 
