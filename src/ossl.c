@@ -185,22 +185,19 @@ int fwd_init(struct ossl_provider *fwd, const char *fwd_name,
 	     const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in,
 	     OSSL_LIB_CTX *libctx, struct dbg *dbg)
 {
-	const char *name;
-
-	if (!fwd)
+	if (!fwd || !fwd_name || !libctx || !dbg)
 		return OSSL_RV_ERR;
 
-	/* TODO set fwd name according to parameter fwd */
-	name = "default";
-
-	fwd->provider = OSSL_PROVIDER_load(libctx, name);
+	fwd->provider = OSSL_PROVIDER_load(libctx, fwd_name);
 	if (!fwd->provider) {
-		ps_dbg_error(dbg, "fwd %s: Failed to load provider", name);
+		ps_dbg_error(dbg, "fwd %s: Failed to load provider", fwd_name);
 		goto err;
 	}
 
 	fwd->ctx = OSSL_PROVIDER_get0_provider_ctx(fwd->provider);
-	fwd->name = name;
+	if (!fwd->ctx)
+		goto err;
+	fwd->name = fwd_name;
 
 	return OSSL_RV_OK;
 

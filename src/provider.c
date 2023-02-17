@@ -3284,6 +3284,10 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 	ps_dbg_debug(&pctx->dbg, "pctx: %p, %s: %s", pctx,
 		     PS_PKCS11_FWD, fwd);
 
+	/* REVISIT skip provider prefix if present */
+	if (strncmp(fwd, "provider=", strlen("provider=")) == 0)
+		fwd += strlen("provider=");
+
 	if (fwd_init(&pctx->fwd, fwd, handle, in, pctx->core.libctx,
 		     &pctx->dbg) != OSSL_RV_OK) {
 		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
