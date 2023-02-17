@@ -12,6 +12,7 @@
 #include <opencryptoki/pkcs11types.h>
 
 #define __unused		__attribute__((unused))
+#define min(a,b)		(((a) < (b)) ? (a) : (b))
 
 #define OSSL_RV_TRUE	(1)
 #define OSSL_RV_FALSE	(0)
@@ -80,7 +81,7 @@ struct obj {
 	unsigned int refcnt;
 
 	int type;
-	EVP_PKEY *fwd_key;
+	void *fwd_key;
 
 	/* REVISIT */
 	unsigned char *secure_key;
