@@ -32,6 +32,11 @@ void ps_dbg_println(unsigned int level, struct dbg *dbg,
 	ps_dbg_println(DBG_INFO, dbg, NULL, 0, NULL, fmt)
 #define ps_dbg_debug(dbg, fmt...) \
 	ps_dbg_println(DBG_DEBUG, dbg, __FILE__, __LINE__, __func__, fmt)
+void ps_dbg_dump(unsigned int level, struct dbg *dbg,
+		 const char *file, int line, const char *func,
+		 const unsigned char *p, size_t plen);
+#define ps_dbg_debug_dump(dbg, p, plen) \
+	ps_dbg_dump(DBG_DEBUG, dbg, __FILE__, __LINE__, __func__, p, plen)
 
 void ps_dbg_init(struct dbg *dbg);
 void ps_dbg_exit(struct dbg *dbg);

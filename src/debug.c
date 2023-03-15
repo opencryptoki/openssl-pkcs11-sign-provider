@@ -42,6 +42,16 @@ static FILE *get_stream(void)
 	return stderr;
 }
 
+static void line_prefix(unsigned int level, struct dbg *dbg,
+			const char *file, int line, const char *func)
+{
+	fprintf(dbg->stream, "[%d] ", level);
+	if (file)
+		fprintf(dbg->stream, "file: %s, line: %d, ", file, line);
+	if (func)
+		fprintf(dbg->stream, "func: %s, ", func);
+}
+
 void ps_dbg_println(unsigned int level, struct dbg *dbg,
 		    const char *file, int line, const char *func,
 		    const char *fmt, ...)
@@ -51,11 +61,7 @@ void ps_dbg_println(unsigned int level, struct dbg *dbg,
 	if ((!ps_dbg_enabled(dbg)) || (dbg->level < level))
 		return;
 
-	fprintf(dbg->stream, "[%d] ", level);
-	if (file)
-		fprintf(dbg->stream, "file: %s, line: %d, ", file, line);
-	if (func)
-		fprintf(dbg->stream, "func: %s, ", func);
+	line_prefix(level, dbg, file, line, func);
 
 	va_start(args, fmt);
 	vfprintf(dbg->stream, fmt, args);
@@ -63,6 +69,34 @@ void ps_dbg_println(unsigned int level, struct dbg *dbg,
 
 	fwrite("\n", 1, 1, dbg->stream);
 	fflush(dbg->stream);
+}
+
+void ps_dbg_dump(unsigned int level, struct dbg *dbg,
+		 const char *file, int line, const char *func,
+		 const unsigned char *p, size_t plen)
+{
+	size_t i;
+
+	if ((!ps_dbg_enabled(dbg)) || (dbg->level < level))
+		return;
+
+	if (!p || !plen) {
+		ps_dbg_println(level, dbg, file, line, func,
+			       "no dump: %p, %lu",
+			       p, plen);
+		return;
+	}
+
+	for (i = 0; i < plen; i++) {
+		if (!(i % 8)) {
+			if (i)
+				fwrite("\n", 1, 1, dbg->stream);
+			line_prefix(level, dbg, file, line, func);
+			fprintf(dbg->stream, "%p:", &p[i]);
+		}
+		fprintf(dbg->stream, "  0x%02x", p[i]);
+	}
+	fwrite("\n", 1, 1, dbg->stream);
 }
 
 void ps_dbg_exit(struct dbg *dbg)
