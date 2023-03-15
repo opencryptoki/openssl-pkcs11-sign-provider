@@ -285,6 +285,8 @@ static int load_object_handles(struct store_ctx *sctx,
 	sctx->objects = objs;
 	sctx->nobjects = nobjs;
 
+	ps_dbg_debug(dbg, "sctx: %p, %d objects found", sctx, sctx->nobjects);
+
 	return OSSL_RV_OK;
 err:
 	for (i = 0; i < nobjs; i++) {
@@ -499,6 +501,9 @@ static int ps_store_load(void *vctx,
 
 	if (object2params(obj, params, KEY_PARAMS) != OSSL_RV_OK)
 		return OSSL_RV_ERR;
+
+	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, --> obj: %p",
+		     sctx, sctx->pctx, obj);
 
 	return object_cb(params, object_cbarg);
 }
