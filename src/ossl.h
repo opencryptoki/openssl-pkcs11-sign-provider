@@ -40,6 +40,9 @@ extern const OSSL_ITEM ps_prov_reason_strings[];
 #define put_error_op_ctx(opctx, err, fmt...)			\
 	put_error_pctx(opctx->pctx, err, fmt)
 
+int ossl_parse_padding(const char *padding);
+int ossl_ecdsa_signature(const unsigned char *raw_sig, size_t raw_siglen,
+			 unsigned char *sig, size_t *siglen);
 void ossl_put_error(struct ossl_core *core, int err,
 		    const char *file, int line, const char *func,
 		    char *fmt, ...);

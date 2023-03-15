@@ -6,8 +6,10 @@
 #include <stdarg.h>
 #include <string.h>
 #include <openssl/crypto.h>
+#include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
+#include <openssl/rsa.h>
 #include <openssl/core.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
@@ -40,6 +42,85 @@ const OSSL_ITEM ps_prov_reason_strings[] = {
 		"A secure key function has failed" },
 	{0, NULL }
 };
+
+int ossl_parse_padding(const char *padding)
+{
+	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_NONE) == 0)
+		return RSA_NO_PADDING;
+	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_PKCSV15) == 0)
+		return RSA_PKCS1_PADDING;
+	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_OAEP) == 0)
+		return RSA_PKCS1_OAEP_PADDING;
+	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_X931) == 0)
+		return RSA_X931_PADDING;
+	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_PSS) == 0)
+		return RSA_PKCS1_PSS_PADDING;
+
+	return -1;
+}
+
+/**
+ * Builds an DER encoded signature from a raw signature.
+ *
+ * @param raw_sig            the raw signature to encode
+ * @param raw_sig_len        the size of the raw signature (2 times prime len)
+ * @param sig                a buffer for storing the encoded signature. If
+ *                           NULL, then required size is returend in sig_len.
+ * @param sig_len            On entry: the size of the buffer in sig.
+ *                           On exit: the size of the encoded sigature.
+ *
+ * @returns 1 for success, otherwise 0.
+ */
+int ossl_ecdsa_signature(const unsigned char *raw_sig, size_t raw_siglen,
+			 unsigned char *sig, size_t *siglen)
+{
+	int rc = OSSL_RV_OK;
+	unsigned char *der;
+	ECDSA_SIG *ec_sig;
+	int derlen;
+
+	if (!raw_sig || !raw_siglen)
+		return OSSL_RV_ERR;
+
+	ec_sig = ECDSA_SIG_new();
+	if (!ec_sig) {
+		return OSSL_RV_ERR;
+	}
+
+	rc = ECDSA_SIG_set0(ec_sig,
+			    BN_bin2bn(raw_sig, raw_siglen / 2, NULL),
+			    BN_bin2bn(raw_sig + raw_siglen / 2, raw_siglen / 2, NULL));
+	if (rc != OSSL_RV_OK)
+		goto out;
+
+	derlen = i2d_ECDSA_SIG(ec_sig, NULL);
+	if (derlen <= 0) {
+		rc = OSSL_RV_ERR;
+		goto out;
+	}
+
+	if (!sig) {
+		*siglen = derlen;
+		goto out;
+	}
+
+	if (*siglen < (size_t)derlen) {
+		rc = OSSL_RV_ERR;
+		goto out;
+	}
+
+	der = sig;
+	derlen = i2d_ECDSA_SIG(ec_sig, &der);
+	if (derlen <= 0) {
+		rc = OSSL_RV_ERR;
+		goto out;
+	}
+
+	*siglen = derlen;
+out:
+	ECDSA_SIG_free(ec_sig);
+	return rc;
+}
 
 void ossl_put_error(struct ossl_core *core, int err,
 		      const char *file, int line, const char *func,
