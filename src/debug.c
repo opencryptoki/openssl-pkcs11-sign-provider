@@ -77,7 +77,8 @@ void ps_dbg_exit(struct dbg *dbg)
 	dbg->stream = NULL;
 	dbg->level = DBG_ERROR;
 
-	fclose(stream);
+	if (stream)
+		fclose(stream);
 }
 
 void ps_dbg_init(struct dbg *dbg)
