@@ -20,6 +20,7 @@
 #define OSSL_RV_ERR	(0)
 
 #define PS_PROV_NAME		"pkcs11sign"
+#define PS_PROV_RSA_DEFAULT_MD	"SHA-1"
 
 #define DECL_DISPATCH_FUNC(type, tname, name) \
 	static OSSL_FUNC_##type##_##tname##_fn name

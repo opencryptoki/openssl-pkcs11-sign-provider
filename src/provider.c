@@ -10,7 +10,6 @@
 #include <openssl/sha.h>
 #include <openssl/bn.h>
 #include <openssl/ec.h>
-#include <openssl/rsa.h>
 #include <openssl/x509v3.h>
 
 #include "common.h"
@@ -41,67 +40,9 @@
 #define PS_PROV_DESCRIPTION	"PKCS11 signing key provider"
 #define PS_PROV_VERSION		"0.1"
 
-#define PS_PROV_RSA_DEFAULT_MD			"SHA-1"
-#define PS_PROV_PKEY_PARAM_SK_BLOB		"ps-blob"
-#define PS_PROV_PKEY_PARAM_SK_FUNCS		"ps-funcs"
-#define PS_PROV_PKEY_PARAM_SK_PRIVATE		"ps-private"
-
 #define PS_PKCS11_MODULE_PATH			"pkcs11sign-module-path"
 #define PS_PKCS11_MODULE_INIT_ARGS		"pkcs11sign-module-init-args"
 #define PS_PKCS11_FWD				"pkcs11sign-forward"
-
-struct ps_op_ctx {
-	struct provider_ctx *pctx;
-	int type; /* EVP_PKEY_xxx types */
-	const char *propq;
-	void *fwd_op_ctx; /* shadow context of default provider */
-	void (*fwd_op_ctx_free)(void *fwd_op_ctx);
-	struct obj *key;
-	int operation;
-	OSSL_FUNC_signature_sign_fn *sign_fn;
-	EVP_MD_CTX *mdctx;
-	EVP_MD *md;
-};
-
-typedef int (*ps_rsa_sign_t)(const unsigned char *key_blob,
-			     size_t key_blob_length,
-			     unsigned char *sig, size_t *siglen,
-			     const unsigned char *tbs, size_t tbslen,
-			     int padding_type, int md_nid,
-			     void *private, bool debug);
-typedef int (*ps_rsa_pss_sign_t)(const unsigned char *key_blob,
-				 size_t key_blob_length, unsigned char *sig,
-				 size_t *siglen, const unsigned char *tbs,
-				 size_t tbslen, int md_nid, int mfgmd_nid,
-				 int saltlen, void *private, bool debug);
-typedef int (*ps_ecdsa_sign_t)(const unsigned char *key_blob,
-			       size_t key_blob_length, unsigned char *sig,
-			       size_t *siglen, const unsigned char *tbs,
-			       size_t tbslen, int md_nid, void *private,
-			       bool debug);
-typedef int (*ps_rsa_decrypt_t)(const unsigned char *key_blob,
-				size_t key_blob_length,
-				unsigned char *to, size_t *tolen,
-				const unsigned char *from, size_t fromlen,
-				int padding_type, void *private, bool debug);
-typedef int (*ps_rsa_decrypt_oaep_t)(const unsigned char *key_blob,
-				     size_t key_blob_length,
-				     unsigned char *to, size_t *tolen,
-				     const unsigned char *from, size_t fromlen,
-				     int oaep_md_nid, int mgfmd_nid,
-				     unsigned char *label, int label_len,
-				     void *private, bool debug);
-
-struct ps_funcs {
-	ps_rsa_sign_t		rsa_sign;
-	ps_rsa_pss_sign_t	rsa_pss_sign;
-	ps_ecdsa_sign_t		ecdsa_sign;
-	ps_rsa_decrypt_t	rsa_decrypt;
-	ps_rsa_decrypt_oaep_t	rsa_decrypt_oaep;
-};
-
-#define ps_key_debug(key, fmt...)	ps_dbg_debug(&(key->pctx->dbg), fmt)
-#define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
 
 #define DISPATCH_PROVIDER_FN(tname, name) DECL_DISPATCH_FUNC(provider, tname, name)
 DISPATCH_PROVIDER_FN(teardown, 			ps_prov_teardown);
@@ -113,13 +54,6 @@ DISPATCH_PROVIDER_FN(get_capabilities, 		ps_prov_get_capabilities);
 
 struct dbg *hack_dbg = NULL;
 
-static int ps_get_bits(struct obj *key)
-{
-	/* dummy */
-	return 0;
-}
-
-/* --- provider START --- */
 static void provider_ctx_teardown(struct provider_ctx *pctx)
 {
 	if (!pctx)
@@ -152,191 +86,6 @@ static inline struct provider_ctx *provider_ctx_new(void)
 {
 	return OPENSSL_zalloc(sizeof(struct provider_ctx));
 }
-/* --- provider END --- */
-
-static struct ps_op_ctx *ps_op_newctx(struct provider_ctx *pctx,
-						const char *propq,
-						int type)
-{
-	struct ps_op_ctx *opctx;
-
-	if (pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "propq: %s type: %d",
-		     propq != NULL ? propq : "", type);
-
-	opctx = OPENSSL_zalloc(sizeof(struct ps_op_ctx));
-	if (opctx == NULL) {
-		put_error_pctx(pctx, PS_ERR_MALLOC_FAILED,
-			       "OPENSSL_zalloc failed");
-		return NULL;
-	}
-
-	opctx->pctx = pctx;
-	opctx->type = type;
-
-	if (propq != NULL)
-		opctx->propq = OPENSSL_strdup(propq);
-
-	if (opctx->propq == NULL) {
-		put_error_pctx(pctx, PS_ERR_MALLOC_FAILED,
-			       "OPENSSL_strdup failed");
-		OPENSSL_free(opctx);
-		return NULL;
-	}
-
-	ps_dbg_debug(&pctx->dbg, "opctx: %p", opctx);
-	return opctx;
-}
-
-// keep
-static void ps_op_freectx(void *vopctx)
-{
-	struct ps_op_ctx *opctx = vopctx;
-
-	if (opctx == NULL)
-		return;
-
-	ps_opctx_debug(opctx, "opctx: %p", opctx);
-
-	if (opctx->fwd_op_ctx != NULL && opctx->fwd_op_ctx_free != NULL)
-		opctx->fwd_op_ctx_free(opctx->fwd_op_ctx);
-
-	if (opctx->key)
-		obj_free(opctx->key);
-
-	if (opctx->propq)
-		OPENSSL_free((void *)opctx->propq);
-
-	if (opctx->mdctx)
-		EVP_MD_CTX_free(opctx->mdctx);
-	if (opctx->md)
-		EVP_MD_free(opctx->md);
-
-	OPENSSL_free(opctx);
-}
-
-static struct ps_op_ctx *ps_op_dupctx(struct ps_op_ctx *opctx)
-{
-	struct ps_op_ctx *new_opctx;
-
-	if (opctx == NULL)
-		return NULL;
-
-	ps_opctx_debug(opctx, "opctx: %p", opctx);
-
-	new_opctx = ps_op_newctx(opctx->pctx, opctx->propq, opctx->type);
-	if (new_opctx == NULL) {
-		ps_opctx_debug(opctx, "ERROR: ps_op_newctx failed");
-		return NULL;
-	}
-
-	new_opctx->operation = opctx->operation;
-	new_opctx->fwd_op_ctx_free = opctx->fwd_op_ctx_free;
-	new_opctx->sign_fn = opctx->sign_fn;
-
-	if (opctx->mdctx) {
-		new_opctx->mdctx = EVP_MD_CTX_new();
-		if (!new_opctx->mdctx) {
-			put_error_op_ctx(opctx, PS_ERR_MALLOC_FAILED,
-					 "EVP_MD_CTX_new failed");
-			ps_op_freectx(new_opctx);
-			return NULL;
-		}
-
-		if (!EVP_MD_CTX_copy_ex(new_opctx->mdctx, opctx->mdctx)) {
-			ps_opctx_debug(opctx,
-					"ERROR: EVP_MD_CTX_copy_ex failed");
-			ps_op_freectx(new_opctx);
-			return NULL;
-		}
-	};
-
-	if (opctx->md) {
-		new_opctx->md = opctx->md;
-		EVP_MD_up_ref(opctx->md);
-	}
-
-	if (opctx->key) {
-		new_opctx->key = opctx->key;
-		obj_get(opctx->key);
-	}
-
-	ps_opctx_debug(opctx, "new_opctx: %p", new_opctx);
-	return new_opctx;
-}
-
-static int ps_op_init(struct ps_op_ctx *ctx, struct obj *key,
-			   int operation)
-{
-	if (ctx == NULL)
-		return 0;
-
-	ps_opctx_debug(ctx, "ctx: %p key: %p operation: %d", ctx, key,
-			operation);
-
-	if (key != NULL) {
-		switch (ctx->type) {
-		case EVP_PKEY_RSA:
-		case EVP_PKEY_RSA_PSS:
-			if (key->type != EVP_PKEY_RSA &&
-			    key->type != EVP_PKEY_RSA_PSS) {
-				put_error_op_ctx(ctx,
-						 PS_ERR_INTERNAL_ERROR,
-						 "key type mismatch: ctx type: "
-						 "%d key type: %d",
-						 ctx->type, key->type);
-				return 0;
-			}
-			break;
-		case EVP_PKEY_EC:
-			if (key->type != EVP_PKEY_EC) {
-				put_error_op_ctx(ctx,
-						 PS_ERR_INTERNAL_ERROR,
-						 "key type mismatch: ctx type: "
-						 "%d key type: %d",
-						 ctx->type, key->type);
-				return 0;
-			}
-			break;
-		default:
-			put_error_op_ctx(ctx, PS_ERR_INTERNAL_ERROR,
-					 "key type unknown: ctx type: "
-					 "%d key type: %d",
-					 ctx->type, key->type);
-			return 0;
-		}
-	}
-
-	if (key != NULL)
-		obj_get(key);
-
-	if (ctx->key != NULL)
-		obj_free(ctx->key);
-
-	ctx->key = key;
-	ctx->operation = operation;
-
-	return 1;
-}
-
-static int ps_parse_padding(const char *padding)
-{
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_NONE) == 0)
-		return RSA_NO_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_PKCSV15) == 0)
-		return RSA_PKCS1_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_OAEP) == 0)
-		return RSA_PKCS1_OAEP_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_X931) == 0)
-		return RSA_X931_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_PSS) == 0)
-		return RSA_PKCS1_PSS_PADDING;
-
-	return -1;
-}
-
 
 static const OSSL_PARAM ps_prov_param_types[] = {
 	OSSL_PARAM_DEFN(OSSL_PROV_PARAM_NAME, OSSL_PARAM_UTF8_PTR, NULL, 0),
