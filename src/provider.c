@@ -35,8 +35,6 @@
 #include "openssl/param_build.h"
 #include <openssl/decoder.h>
 
-static OSSL_PROVIDER *pkcs11sign_provider;
-
 #define PS_PROV_DESCRIPTION	"PKCS11 signing key provider"
 #define PS_PROV_VERSION		"0.1"
 
@@ -165,6 +163,8 @@ DISPATCH_ASYMCIPHER(gettable_ctx_params, ps_asym_gettable_ctx_params);
 DISPATCH_ASYMCIPHER(settable_ctx_params, ps_asym_settable_ctx_params);
 
 DISPATCH_ASYMCIPHER(freectx, ps_op_freectx);
+
+struct dbg *hack_dbg = NULL;
 
 static int ps_get_bits(struct obj *key)
 {
@@ -3191,6 +3191,7 @@ static void ps_prov_teardown(void *vpctx)
 	fwd_teardown(&pctx->fwd);
 	core_teardown(&pctx->core);
 
+	provider_ctx_teardown(pctx);
 	provider_ctx_free(pctx);
 }
 
@@ -3306,6 +3307,7 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 
 	*vctx = pctx;
 	*out = ps_dispatch_table;
+	hack_dbg = &pctx->dbg;
 	return OSSL_RV_OK;
 
 err:
