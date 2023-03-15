@@ -86,5 +86,32 @@ struct obj {
 	/* REVISIT */
 	unsigned char *secure_key;
 };
+#define ps_obj_debug(obj, fmt...)	ps_dbg_debug(&(obj->pctx->dbg), fmt)
+
+struct op_ctx {
+	struct provider_ctx *pctx;
+	int type;
+	int operation;
+	char *prop;
+
+	struct obj *key;
+	CK_OBJECT_HANDLE hobject;
+	CK_SESSION_HANDLE hsession;
+
+	void *fwd_op_ctx;
+	void (*fwd_op_ctx_free)(void *);
+
+	EVP_MD *md;
+	EVP_MD_CTX *mdctx;
+	CK_MECHANISM mech;
+};
+#define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
+
+int op_ctx_init(struct op_ctx *octx, struct obj *key, int operation);
+struct op_ctx *op_ctx_new(struct provider_ctx *pctx, const char *prop, int type);
+struct op_ctx *op_ctx_dup(struct op_ctx * opctx);
+void op_ctx_free(struct op_ctx *octx);
+
+extern struct dbg *hack_dbg;
 
 #endif /* _PKCS11SIGN_COMMON_H */

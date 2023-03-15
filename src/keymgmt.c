@@ -15,45 +15,14 @@
 #include "debug.h"
 #include "object.h"
 
-struct op_ctx {
-	struct provider_ctx *pctx;
-	int type;
-	int operation;
-	char *prop;
-	struct obj *key;
-
-	void *fwd_op_ctx;
-	void (*fwd_op_ctx_free)(void *);
-};
-
-static void op_ctx_free(struct op_ctx *octx)
-{
-	obj_free(octx->key);
-	OPENSSL_free(octx->prop);
-	OPENSSL_free(octx);
-}
-
-static struct op_ctx *op_ctx_new(struct provider_ctx *pctx, const char *prop,
-				 int type)
-{
-	struct op_ctx *octx;
-
-	octx = OPENSSL_zalloc(sizeof(struct op_ctx));
-	if (!octx)
-		return NULL;
-
-	octx->pctx = pctx;
-	octx->prop = OPENSSL_strdup(prop);
-	octx->type = type;
-
-	return octx;
-}
-
-static int fwd_gen_init(struct op_ctx *octx, int selection, const OSSL_PARAM params[], int type)
+static int op_ctx_init_fwd(struct op_ctx *octx, int selection, const OSSL_PARAM params[], int type)
 {
 	OSSL_FUNC_keymgmt_gen_cleanup_fn *fwd_gen_cleanup_fn;
 	OSSL_FUNC_keymgmt_gen_init_fn *fwd_gen_init_fn;
 	struct ossl_provider *fwd = &octx->pctx->fwd;
+
+	if (!octx)
+		return OSSL_RV_ERR;
 
 	fwd_gen_init_fn = (OSSL_FUNC_keymgmt_gen_init_fn *)
 		fwd_keymgmt_get_func(fwd, type,
@@ -83,56 +52,6 @@ static int fwd_gen_init(struct op_ctx *octx, int selection, const OSSL_PARAM par
 		return OSSL_RV_ERR;
 	}
 	octx->fwd_op_ctx_free = fwd_gen_cleanup_fn;
-
-	return OSSL_RV_OK;
-}
-
-static int op_ctx_init(struct op_ctx *octx, struct obj *key, int operation)
-{
-	struct dbg *dbg = &octx->pctx->dbg;
-
-	ps_dbg_debug(dbg, "key: %p, operation: %d",
-		     key, operation);
-
-	if (!key)
-		goto out;
-
-	switch (octx->type) {
-	case EVP_PKEY_RSA:
-	case EVP_PKEY_RSA_PSS:
-		if (key->type != EVP_PKEY_RSA &&
-		    key->type != EVP_PKEY_RSA_PSS) {
-			put_error_op_ctx(octx,
-					 PS_ERR_INTERNAL_ERROR,
-					 "key type mismatch: ctx type: "
-					 "%d key type: %d",
-					 octx->type, key->type);
-			return OSSL_RV_ERR;
-		}
-		break;
-	case EVP_PKEY_EC:
-		if (key->type != EVP_PKEY_EC) {
-			put_error_op_ctx(octx,
-					 PS_ERR_INTERNAL_ERROR,
-					 "key type mismatch: ctx type: "
-					 "%d key type: %d",
-					 octx->type, key->type);
-			return OSSL_RV_ERR;
-		}
-		break;
-	default:
-		put_error_op_ctx(octx, PS_ERR_INTERNAL_ERROR,
-				 "key type unknown: ctx type: "
-				 "%d key type: %d",
-				 octx->type, key->type);
-		return OSSL_RV_ERR;
-	}
-out:
-	octx->operation = operation;
-
-	/* update/replace key */
-	obj_free(octx->key);
-	octx->key = obj_get(key);
 
 	return OSSL_RV_OK;
 }
