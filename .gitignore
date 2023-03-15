@@ -8,6 +8,7 @@
 *~
 tests/tmp.*
 tests/ttls
+tests/tsignature
 *.log
 *.trs
 
