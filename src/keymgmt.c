@@ -221,16 +221,24 @@ static const OSSL_PARAM *keymgmt_settable_params(struct provider_ctx *pctx,
 		NULL;
 }
 
-static const OSSL_PARAM *keymgmt_export_types(int selection __unused,
-					      int type __unused)
+static const OSSL_PARAM *keymgmt_export_types(int selection,
+					      int type)
 {
+	if (hack_dbg)
+		ps_dbg_debug(hack_dbg, "selection: %d type: %d",
+			    selection, type);
+
 	/* not supported */
 	return NULL;
 }
 
-static const OSSL_PARAM *keymgmt_import_types(int selection __unused,
-					      int type __unused)
+static const OSSL_PARAM *keymgmt_import_types(int selection,
+					      int type)
 {
+	if (hack_dbg)
+		ps_dbg_debug(hack_dbg, "selection: %d type: %d",
+			    selection, type);
+
 	/* not supported */
 	return NULL;
 }
@@ -261,7 +269,7 @@ static struct op_ctx *keymgmt_gen_init(struct provider_ctx *pctx, int selection,
 		goto err;
 	}
 
-	if (fwd_gen_init(octx, selection, params, type) != OSSL_RV_OK)
+	if (op_ctx_init_fwd(octx, selection, params, type) != OSSL_RV_OK)
 		goto err;
 
 	ps_dbg_debug(&pctx->dbg, "octx: %p", octx);
@@ -372,47 +380,6 @@ out:
 	return rv;
 }
 
-static int keymgmt_match_pkcs11(const struct obj *key1, const struct obj *key2,
-				int selection)
-{
-	struct dbg *dbg = &key1->pctx->dbg;
-	CK_BYTE_PTR id1, id2;
-	CK_ULONG id1len, id2len;
-	int rv;
-
-	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d",
-		     key1, key2, selection);
-
-	if (obj_get_id(key1, &id1, &id1len) != OSSL_RV_OK) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	if (obj_get_id(key2, &id2, &id2len) != OSSL_RV_OK) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	if (!id1 || !id2 || !id1len || !id2len) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	if (id1len != id2len) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	rv = (memcmp(id1, id2, id1len) == 0) ?
-		OSSL_RV_TRUE :
-		OSSL_RV_FALSE;
-out:
-	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d --> %s",
-		     key1, key2, selection,
-		     (rv == OSSL_RV_TRUE) ? "match" : "mismatch");
-	return rv;
-}
-
 static int get_pubkey_obj(const struct obj *key, unsigned char **pub, unsigned long *npub)
 {
 	CK_BYTE_PTR p;
@@ -463,6 +430,48 @@ static int get_pubkey_fwd(const struct obj *key, unsigned char **pub, unsigned l
 	*npub = params[0].data_size;
 
 	return OSSL_RV_OK;
+}
+
+static int keymgmt_match_pkcs11(const struct obj *key1,
+				const struct obj *key2,
+				int selection)
+{
+	struct dbg *dbg = &key1->pctx->dbg;
+	CK_BYTE_PTR id1, id2;
+	CK_ULONG id1len, id2len;
+	int rv;
+
+	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d",
+		     key1, key2, selection);
+
+	if (obj_get_id(key1, &id1, &id1len) != OSSL_RV_OK) {
+		rv = OSSL_RV_FALSE;
+		goto out;
+	}
+
+	if (obj_get_id(key2, &id2, &id2len) != OSSL_RV_OK) {
+		rv = OSSL_RV_FALSE;
+		goto out;
+	}
+
+	if (!id1 || !id2 || !id1len || !id2len) {
+		rv = OSSL_RV_FALSE;
+		goto out;
+	}
+
+	if (id1len != id2len) {
+		rv = OSSL_RV_FALSE;
+		goto out;
+	}
+
+	rv = (memcmp(id1, id2, id1len) == 0) ?
+		OSSL_RV_TRUE :
+		OSSL_RV_FALSE;
+out:
+	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d --> %s",
+		     key1, key2, selection,
+		     (rv == OSSL_RV_TRUE) ? "match" : "mismatch");
+	return rv;
 }
 
 static int keymgmt_match_mixed(const struct obj *key1, const struct obj *key2,
