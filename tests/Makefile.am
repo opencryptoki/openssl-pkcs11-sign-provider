@@ -8,7 +8,7 @@ testsdir=@abs_srcdir@
 
 check_PROGRAMS = ttls
 
-ttls_SOURCES = ttls.c
+ttls_SOURCES = ttls.c utils.c utils.h
 ttls_CFLAGS = $(AM_CFLAGS) $(STD_CFLAGS) $(OPENSSL_CFLAGS)
 ttls_LDADD = $(OPENSSL_LIBS)
 

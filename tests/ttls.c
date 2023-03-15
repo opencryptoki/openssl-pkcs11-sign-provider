@@ -8,60 +8,9 @@
 #include <openssl/err.h>
 #include <openssl/store.h>
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-
-static void info(void)
-{
-	fprintf(stderr, "Package Version %s, Author: %s\n",
-		PACKAGE_VERSION, PACKAGE_AUTHOR);
-}
-#else
-static void info(void) {}
-#endif
+#include "utils.h"
 
 #define EXIT_SKIP	(77)
-
-static EVP_PKEY *uri_pkey_get1(const char *uri)
-{
-	OSSL_STORE_CTX *sctx;
-	EVP_PKEY *pkey = NULL;
-
-	sctx = OSSL_STORE_open(uri, NULL, NULL, NULL, NULL);
-	if (!sctx) {
-		fprintf(stderr, "OSSL_STORE_open() failed: uri=%s\n", uri);
-		ERR_print_errors_fp(stderr);
-		exit(EXIT_FAILURE);
-	}
-
-	while (!OSSL_STORE_eof(sctx)) {
-		OSSL_STORE_INFO *info = OSSL_STORE_load(sctx);
-		if (!info) {
-			fprintf(stderr, "OSSL_STORE_load() failed: uri=%s\n", uri);
-			ERR_print_errors_fp(stderr);
-			OSSL_STORE_close(sctx);
-			exit(EXIT_FAILURE);
-		}
-
-		if (OSSL_STORE_INFO_get_type(info) != OSSL_STORE_INFO_PKEY) {
-			OSSL_STORE_INFO_free(info);
-			continue;
-		}
-
-		pkey = OSSL_STORE_INFO_get1_PKEY(info);
-		OSSL_STORE_INFO_free(info);
-	}
-
-	if (!pkey) {
-		fprintf(stderr, "OSSL_STORE_INFO_PKEY not found: uri=%s\n", uri);
-		ERR_print_errors_fp(stderr);
-		OSSL_STORE_close(sctx);
-		exit(EXIT_FAILURE);
-	}
-
-	OSSL_STORE_close(sctx);
-	return pkey;
-}
 
 static SSL_CTX *create_context(void)
 {
