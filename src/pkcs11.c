@@ -164,6 +164,166 @@ CK_ATTRIBUTE_PTR pkcs11_attrs_dup(CK_ATTRIBUTE_PTR src, CK_ULONG n)
 	return dst;
 }
 
+CK_RV pkcs11_sign_init(struct pkcs11_module *pkcs11,
+		       CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
+		       CK_OBJECT_HANDLE hkey, struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_SignInit(hsession, mech, hkey);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_SignInit() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_sign(struct pkcs11_module *pkcs11,
+		  CK_SESSION_HANDLE hsession,
+		  const unsigned char *data, size_t datalen,
+		  unsigned char *sig, size_t *siglen,
+		  struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_Sign(hsession, data, datalen, sig, siglen);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_Sign() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_sign_update(struct pkcs11_module *pkcs11,
+			 CK_SESSION_HANDLE hsession,
+			 unsigned char *data, size_t datalen,
+			 struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_SignUpdate(hsession, data, datalen);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_SignUpdate() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_sign_final(struct pkcs11_module *pkcs11,
+			CK_SESSION_HANDLE hsession,
+			unsigned char *sig, size_t *siglen,
+			struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_SignFinal(hsession, sig, siglen);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_SignFinal() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_verify_init(struct pkcs11_module *pkcs11,
+			 CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
+			 CK_OBJECT_HANDLE hkey, struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_VerifyInit(hsession, mech, hkey);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_VerifyInit() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_verify(struct pkcs11_module *pkcs11,
+		    CK_SESSION_HANDLE hsession,
+		    unsigned char *data, size_t datalen,
+		    unsigned char *sig, size_t siglen,
+		    struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_Verify(hsession, data, datalen, sig, siglen);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_Verify() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_verify_update(struct pkcs11_module *pkcs11,
+		    CK_SESSION_HANDLE hsession,
+		    unsigned char *data, size_t datalen,
+		    struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_VerifyUpdate(hsession, data, datalen);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_VerifyUpdate() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_verify_final(struct pkcs11_module *pkcs11,
+		    CK_SESSION_HANDLE hsession,
+		    unsigned char *sig, size_t siglen,
+		    struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_VerifyFinal(hsession, sig, siglen);
+	if (ck_rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: C_VerifyFinal() failed: %d",
+			     pkcs11->soname, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
 			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
