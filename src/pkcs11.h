@@ -22,6 +22,11 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
 			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
 			      struct dbg *dbg);
+CK_RV pkcs11_object_handle(struct pkcs11_module *pkcs11,
+			   CK_SESSION_HANDLE hsession,
+			   CK_ATTRIBUTE_PTR attrs, CK_ULONG nattrs,
+			   CK_OBJECT_HANDLE_PTR phobject,
+			   struct dbg *dbg);
 CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 			  CK_SESSION_HANDLE session,
 			  const char *label, const char *id, const char *type,

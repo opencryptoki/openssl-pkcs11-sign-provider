@@ -225,6 +225,43 @@ err:
 	return rv;
 }
 
+CK_RV pkcs11_object_handle(struct pkcs11_module *pkcs11,
+			   CK_SESSION_HANDLE hsession,
+			   CK_ATTRIBUTE_PTR attrs, CK_ULONG nattrs,
+			   CK_OBJECT_HANDLE_PTR phobject,
+			   struct dbg *dbg)
+{
+	CK_OBJECT_HANDLE ho;
+	CK_ULONG nho;
+	CK_RV rv;
+
+	if (!phobject || (*phobject != CK_INVALID_HANDLE) ||
+	    (hsession == CK_INVALID_HANDLE))
+		return CKR_ARGUMENTS_BAD;
+
+	rv = pkcs11->fns->C_FindObjectsInit(hsession, attrs, nattrs);
+	if (rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: unable to initialize search: %d",
+			     pkcs11->soname, rv);
+		return rv;
+	}
+
+	rv = pkcs11->fns->C_FindObjects(hsession, &ho, 1, &nho);
+	if (rv != CKR_OK) {
+		ps_dbg_error(dbg, "%s: unable to process search: %d",
+			     pkcs11->soname, rv);
+		return rv;
+	}
+
+	pkcs11->fns->C_FindObjectsFinal(hsession);
+
+	*phobject = (nho) ?
+		ho :
+		CK_INVALID_HANDLE;
+
+	return rv;
+}
+
 CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 			  CK_SESSION_HANDLE session,
 			  const char *label, const char *id, const char *type,
@@ -263,6 +300,8 @@ CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 		rv = pkcs11->fns->C_FindObjects(session, tmp, OBJ_PER_SEARCH,
 						&ntmp);
 		if (rv != CKR_OK) {
+			ps_dbg_error(dbg, "%s: unable to process search: %d",
+				     pkcs11->soname, rv);
 			OPENSSL_free(objs);
 			nobjs = 0;
 			goto out;
