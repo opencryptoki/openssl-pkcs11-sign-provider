@@ -111,6 +111,7 @@ struct op_ctx {
 int op_ctx_init(struct op_ctx *octx, struct obj *key, int operation);
 struct op_ctx *op_ctx_new(struct provider_ctx *pctx, const char *prop, int type);
 struct op_ctx *op_ctx_dup(struct op_ctx * opctx);
+void op_ctx_teardown_pkcs11(struct op_ctx *opctx);
 void op_ctx_free(struct op_ctx *octx);
 
 extern struct dbg *hack_dbg;

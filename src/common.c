@@ -104,8 +104,28 @@ err:
 	return NULL;
 }
 
+void op_ctx_teardown_pkcs11(struct op_ctx *opctx)
+{
+	pkcs11_session_close(opctx->pctx->pkcs11, &opctx->hsession,
+			     &opctx->pctx->dbg);
+
+	opctx->hsession = CK_INVALID_HANDLE;
+	opctx->hobject = CK_INVALID_HANDLE;
+}
+
+static void op_ctx_free_fwd(struct op_ctx *opctx)
+{
+	if (!opctx || !opctx->fwd_op_ctx || !opctx->fwd_op_ctx_free)
+		return;
+
+	opctx->fwd_op_ctx_free(opctx->fwd_op_ctx);
+}
+
 void op_ctx_free(struct op_ctx *octx)
 {
+	op_ctx_teardown_pkcs11(octx);
+
+	op_ctx_free_fwd(octx);
 	obj_free(octx->key);
 	OPENSSL_free(octx->prop);
 	OPENSSL_free(octx);

@@ -18,17 +18,8 @@
 
 static int ps_get_bits(struct obj *key __unused)
 {
-	/* dummy */
+	/* TODO implementation */
 	return 0;
-}
-
-void op_ctx_session_teardown(struct op_ctx *opctx)
-{
-	pkcs11_session_close(opctx->pctx->pkcs11, &opctx->hsession,
-			     &opctx->pctx->dbg);
-
-	opctx->hsession = CK_INVALID_HANDLE;
-	opctx->hobject = CK_INVALID_HANDLE;
 }
 
 int op_ctx_session_ensure(struct op_ctx *opctx)
@@ -125,14 +116,6 @@ err:
 	return OSSL_RV_ERR;
 }
 
-static void signature_op_ctx_free_fwd(struct op_ctx *opctx)
-{
-	if (!opctx || !opctx->fwd_op_ctx || !opctx->fwd_op_ctx_free)
-		return;
-
-	opctx->fwd_op_ctx_free(opctx->fwd_op_ctx);
-}
-
 static int signature_op_ctx_init_fwd(struct op_ctx *opctx)
 {
 	OSSL_FUNC_signature_freectx_fn *fwd_freectx_fn;
@@ -195,24 +178,8 @@ static struct op_ctx *signature_op_ctx_new(
 	return opctx;
 
 err:
-	signature_op_ctx_free_fwd(opctx);
 	op_ctx_free(opctx);
 	return NULL;
-}
-
-static void ps_signature_op_freectx(void *vopctx)
-{
-	struct op_ctx *opctx = vopctx;
-
-	if (!opctx)
-		return;
-
-	ps_opctx_debug(opctx, "opctx: %p", opctx);
-
-	signature_op_ctx_free_fwd(opctx);
-	op_ctx_session_teardown(opctx);
-
-	op_ctx_free(opctx);
 }
 
 static void *ps_signature_op_dupctx(void *vopctx)
@@ -1579,7 +1546,7 @@ static int ps_signature_ec_digest_sign_init(void *vopctx,
 static const OSSL_DISPATCH ps_rsa_signature_functions[] = {
 	/* Signature context constructor, descructor */
 	{ OSSL_FUNC_SIGNATURE_NEWCTX, (void (*)(void))ps_signature_rsa_newctx },
-	{ OSSL_FUNC_SIGNATURE_FREECTX, (void (*)(void))ps_signature_op_freectx },
+	{ OSSL_FUNC_SIGNATURE_FREECTX, (void (*)(void))op_ctx_free},
 	{ OSSL_FUNC_SIGNATURE_DUPCTX, (void (*)(void))ps_signature_op_dupctx },
 	/* Signing */
 	{ OSSL_FUNC_SIGNATURE_SIGN_INIT, (void (*)(void))ps_signature_rsa_sign_init },
@@ -1614,7 +1581,7 @@ static const OSSL_DISPATCH ps_rsa_signature_functions[] = {
 static const OSSL_DISPATCH ps_ecdsa_signature_functions[] = {
 	/* Signature context constructor, descructor */
 	{ OSSL_FUNC_SIGNATURE_NEWCTX, (void (*)(void))ps_signature_ec_newctx },
-	{ OSSL_FUNC_SIGNATURE_FREECTX, (void (*)(void))ps_signature_op_freectx },
+	{ OSSL_FUNC_SIGNATURE_FREECTX, (void (*)(void))op_ctx_free },
 	{ OSSL_FUNC_SIGNATURE_DUPCTX, (void (*)(void))ps_signature_op_dupctx },
 	/* Signing */
 	{ OSSL_FUNC_SIGNATURE_SIGN_INIT, (void (*)(void))ps_signature_ec_sign_init },
