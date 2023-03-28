@@ -28,6 +28,7 @@ struct store_ctx {
 	struct obj **objects;
 	CK_ULONG nobjects;
 	CK_ULONG load_idx;
+	int expect;
 };
 
 static int key2params(struct obj *obj, OSSL_PARAM *params, unsigned int nparams)
@@ -574,14 +575,6 @@ static const OSSL_PARAM *ps_store_settable_ctx_params(void *pctx __unused)
 {
 	static const OSSL_PARAM known_settable_ctx_params[] = {
 		OSSL_PARAM_int(OSSL_STORE_PARAM_EXPECT, NULL),
-		OSSL_PARAM_octet_string(OSSL_STORE_PARAM_SUBJECT, NULL, 0),
-		OSSL_PARAM_octet_string(OSSL_STORE_PARAM_ISSUER, NULL, 0),
-		OSSL_PARAM_BN(OSSL_STORE_PARAM_SERIAL, NULL, 0),
-		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_DIGEST, NULL, 0),
-		OSSL_PARAM_octet_string(OSSL_STORE_PARAM_FINGERPRINT, NULL, 0),
-		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_ALIAS, NULL, 0),
-		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_PROPERTIES, NULL, 0),
-		OSSL_PARAM_utf8_string(OSSL_STORE_PARAM_INPUT_TYPE, NULL, 0),
 		OSSL_PARAM_END,
 	};
 	return known_settable_ctx_params;
@@ -600,9 +593,27 @@ static int ps_store_set_ctx_params(void *vctx,
 
 	ps_dbg_debug(dbg, "sctx: %p", sctx);
 	for (p = params; (p && p->key); p++)
-		ps_dbg_debug(dbg, "param: %s (0x%x)", p->key, p->data_type);
+		ps_dbg_debug(dbg, "param: %s (type: 0x%x)",
+			     p->key, p->data_type);
 
-	return OSSL_RV_ERR;
+	p = OSSL_PARAM_locate_const(params, OSSL_STORE_PARAM_EXPECT);
+	if (p) {
+		int val;
+
+		if (OSSL_PARAM_get_int(p, &val) != OSSL_RV_OK)
+			return OSSL_RV_ERR;
+		ps_dbg_debug(dbg, "expect: %d", val);
+		switch (val) {
+		case OSSL_STORE_INFO_PKEY:
+			break;
+		default:
+			ps_dbg_debug(dbg, "expect: %d not supported", val);
+			return OSSL_RV_ERR;
+		}
+		sctx->expect = val;
+	}
+
+	return OSSL_RV_OK;
 }
 
 #define DISP_STORE_ELEM(NAME, name) \
