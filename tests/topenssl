@@ -2,6 +2,32 @@
 # Copyright (C) IBM Corp. 2022
 # SPDX-License-Identifier: Apache-2.0
 
-openssl version
+test -z "${TESTSDIR}" && exit 77
+source "${TESTSDIR}/helpers.sh"
+
+echo "##################################################"
+echo "## Tests with openssl commands"
+echo "##"
+echo "## version:"
+echo "## $(openssl version)"
+echo "##"
+
+echo "##################################################"
+echo "## EC: sign/verify (pkcs11/file)"
+echo "##"
+
+ossl '
+dgst -sign "${URI_KEY_ECDSA_PRV}"
+     -sha256
+     -out "${TMPPDIR}/random-1k.bin.sig"
+     "${TMPPDIR}/random-1k.bin"' \
+|| exit 99
+
+ossl '
+dgst -verify "${FILE_PEM_ECDSA_PUB}"
+     -sha256
+     -signature "${TMPPDIR}/random-1k.bin.sig"
+     "${TMPPDIR}/random-1k.bin"' \
+|| exit 99
 
 exit 0
