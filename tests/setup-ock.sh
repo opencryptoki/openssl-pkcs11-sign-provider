@@ -43,6 +43,8 @@ mkdir -p ${TMPPDIR} \
 #######################################
 echo "## Generate PKCS#11 pin file"
 PIN_SOURCE=${TMPPDIR}/pinfile.txt
+touch "${PIN_SOURCE}"
+chmod 600 "${PIN_SOURCE}"
 printf "%s" "${OCK_USER_PIN}" > ${PIN_SOURCE} \
 || exit 99
 
