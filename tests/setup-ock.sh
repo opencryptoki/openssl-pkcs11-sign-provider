@@ -41,6 +41,10 @@ mkdir -p ${TMPPDIR} \
 || exit 99
 
 #######################################
+echo "## Generate test data"
+generate_payload
+
+#######################################
 echo "## Generate PKCS#11 pin file"
 PIN_SOURCE=${TMPPDIR}/pinfile.txt
 touch "${PIN_SOURCE}"
