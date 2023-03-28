@@ -57,3 +57,24 @@ EOF
 	# cleanup
 	rm -f "${tmppdir}/tmp.csr" "${tmppdir}/server.v3.ext"
 }
+
+generate_payload() {
+	for length in 1 64; do
+		DATA="${TMPPDIR}/random-${length}k.bin"
+
+		dd if=/dev/random				\
+		   of="${DATA}"					\
+		   bs=1K count=${length}
+
+		openssl sha256					\
+			-binary					\
+			-out "${DATA}.sha256"			\
+			"${DATA}"
+	done
+}
+
+ossl() {
+	echo "# r "$* >> ${TMPPDIR}/gdb-commands.txt
+	echo openssl $*
+	eval openssl $1
+}
