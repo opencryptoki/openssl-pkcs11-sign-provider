@@ -103,7 +103,7 @@ static const OSSL_PARAM *ps_prov_gettable_params(void *vpctx)
 	if (pctx == NULL)
 		return NULL;
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
+	ps_pctx_debug(pctx, "pctx: %p", pctx);
 	return ps_prov_param_types;
 }
 
@@ -115,7 +115,7 @@ static int ps_prov_get_params(void *vpctx, OSSL_PARAM params[])
 	if (pctx == NULL)
 		return 0;
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
+	ps_pctx_debug(pctx, "pctx: %p", pctx);
 
 	p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_NAME);
 	if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, PS_PROV_DESCRIPTION)) {
@@ -156,7 +156,7 @@ static const OSSL_ALGORITHM *ps_prov_query_operation(void *vpctx,
 
 	*no_cache = 0;
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p operation_id: %d", pctx, operation_id);
+	ps_pctx_debug(pctx, "pctx: %p operation_id: %d", pctx, operation_id);
 
 	switch (operation_id) {
 	case OSSL_OP_KEYMGMT:
@@ -195,7 +195,7 @@ static const OSSL_ITEM *ps_prov_get_reason_strings(void *vpctx)
 {
 	struct provider_ctx *pctx = vpctx;
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
+	ps_pctx_debug(pctx, "pctx: %p", pctx);
 	return ps_prov_reason_strings;
 }
 
@@ -204,7 +204,7 @@ static int ps_prov_get_capabilities(void *vpctx,
 {
 	struct provider_ctx *pctx = vpctx;
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p capability: %s", pctx,
+	ps_pctx_debug(pctx, "pctx: %p capability: %s", pctx,
 		     capability);
 
 	if (pctx->fwd.provider == NULL)
@@ -274,11 +274,11 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 		goto err;
 	}
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p, %s: %s", pctx,
+	ps_pctx_debug(pctx, "pctx: %p, %s: %s", pctx,
 		     PS_PKCS11_MODULE_PATH, module);
-	ps_dbg_debug(&pctx->dbg, "pctx: %p, %s: %s", pctx,
+	ps_pctx_debug(pctx, "pctx: %p, %s: %s", pctx,
 		     PS_PKCS11_MODULE_INIT_ARGS, module_args);
-	ps_dbg_debug(&pctx->dbg, "pctx: %p, %s: %s", pctx,
+	ps_pctx_debug(pctx, "pctx: %p, %s: %s", pctx,
 		     PS_PKCS11_FWD, fwd);
 
 	/* REVISIT skip provider prefix if present */
@@ -291,7 +291,7 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 			       "Failed to initialize forward %s", fwd);
 		goto err;
 	}
-	ps_dbg_debug(&pctx->dbg, "pctx: %p, forward: %s", pctx, pctx->fwd.name);
+	ps_pctx_debug(pctx, "pctx: %p, forward: %s", pctx, pctx->fwd.name);
 
 	pctx->pkcs11 = pkcs11_module_new(module, module_args, &pctx->dbg);
 	if (!pctx->pkcs11) {
@@ -299,7 +299,7 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 			       "Failed to initialize pkcs11 module %s", module);
 		goto err;
 	}
-	ps_dbg_debug(&pctx->dbg, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11->soname);
+	ps_pctx_debug(pctx, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11->soname);
 
 	*vctx = pctx;
 	*out = ps_dispatch_table;
