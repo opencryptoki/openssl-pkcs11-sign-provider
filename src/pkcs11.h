@@ -34,22 +34,23 @@ CK_RV pkcs11_sign_final(struct pkcs11_module *pkcs11,
 			CK_SESSION_HANDLE hsession,
 			unsigned char *sig, size_t *siglen,
 			struct dbg *dbg);
-CK_RV pkcs11_verify_init(struct pkcs11_module *pkcs11,
-			 CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
-			 CK_OBJECT_HANDLE hkey, struct dbg *dbg);
-CK_RV pkcs11_verify(struct pkcs11_module *pkcs11,
-		    CK_SESSION_HANDLE hsession,
-		    unsigned char *data, size_t datalen,
-		    unsigned char *sig, size_t siglen,
-		    struct dbg *dbg);
-CK_RV pkcs11_verify_update(struct pkcs11_module *pkcs11,
-		    CK_SESSION_HANDLE hsession,
-		    unsigned char *data, size_t datalen,
-		    struct dbg *dbg);
-CK_RV pkcs11_verify_final(struct pkcs11_module *pkcs11,
-		    CK_SESSION_HANDLE hsession,
-		    unsigned char *sig, size_t siglen,
-		    struct dbg *dbg);
+CK_RV pkcs11_decrypt_init(struct pkcs11_module *pkcs11,
+			  CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
+			  CK_OBJECT_HANDLE hkey, struct dbg *dbg);
+CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
+		     CK_SESSION_HANDLE hsession,
+		     unsigned char *cdata, size_t cdatalen,
+		     unsigned char *data, size_t *datalen,
+		     struct dbg *dbg);
+CK_RV pkcs11_decrypt_update(struct pkcs11_module *pkcs11,
+			    CK_SESSION_HANDLE hsession,
+			    unsigned char *cpdata, size_t cpdatalen,
+			    unsigned char *pdata, size_t *pdatalen,
+			    struct dbg *dbg);
+CK_RV pkcs11_decrypt_final(struct pkcs11_module *pkcs11,
+			   CK_SESSION_HANDLE hsession,
+			   unsigned char *pdata, size_t *pdatalen,
+			   struct dbg *dbg);
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
 			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,

@@ -68,7 +68,7 @@ void pkcs11_attr_type(CK_ATTRIBUTE_PTR attr, const char *type)
 		attr->pValue = (CK_VOID_PTR)&oc_private;
 	else if (strncmp(type, str_pub, strlen(str_pub)) == 0)
 		attr->pValue = (CK_VOID_PTR)&oc_public;
-	else if (strncmp(type, str_pub, strlen(str_pub)) == 0)
+	else if (strncmp(type, str_cert, strlen(str_pub)) == 0)
 		attr->pValue = (CK_VOID_PTR)&oc_certificate;
 	else
 		return;		/* not supported:  data, secret-key */
@@ -174,7 +174,11 @@ CK_RV pkcs11_sign_init(struct pkcs11_module *pkcs11,
 		return CKR_ARGUMENTS_BAD;
 
 	ck_rv = pkcs11->fns->C_SignInit(hsession, mech, hkey);
-	if (ck_rv != CKR_OK) {
+	switch (ck_rv) {
+	case CKR_OK:
+	case CKR_OPERATION_ACTIVE:
+		break;
+	default:
 		ps_dbg_error(dbg, "%s: C_SignInit() failed: %d",
 			     pkcs11->soname, ck_rv);
 		return ck_rv;
@@ -244,18 +248,43 @@ CK_RV pkcs11_sign_final(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 }
 
-CK_RV pkcs11_verify_init(struct pkcs11_module *pkcs11,
-			 CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
-			 CK_OBJECT_HANDLE hkey, struct dbg *dbg)
+CK_RV pkcs11_decrypt_init(struct pkcs11_module *pkcs11,
+			  CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
+			  CK_OBJECT_HANDLE hkey, struct dbg *dbg)
 {
 	CK_RV ck_rv;
 
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_VerifyInit(hsession, mech, hkey);
+	ck_rv = pkcs11->fns->C_DecryptInit(hsession, mech, hkey);
+	switch (ck_rv) {
+	case CKR_OK:
+	case CKR_OPERATION_ACTIVE:
+		break;
+	default:
+		ps_dbg_error(dbg, "%s: C_DecryptInit() failed: %d (0x%02x)",
+			     pkcs11->soname, ck_rv, ck_rv);
+		return ck_rv;
+	}
+
+	return CKR_OK;
+}
+
+CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
+		     CK_SESSION_HANDLE hsession,
+		     unsigned char *cdata, size_t cdatalen,
+		     unsigned char *data, size_t *datalen,
+		     struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_Decrypt(hsession, cdata, cdatalen, data, datalen);
 	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_VerifyInit() failed: %d",
+		ps_dbg_error(dbg, "%s: C_Decrypt() failed: %d",
 			     pkcs11->soname, ck_rv);
 		return ck_rv;
 	}
@@ -263,20 +292,20 @@ CK_RV pkcs11_verify_init(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 }
 
-CK_RV pkcs11_verify(struct pkcs11_module *pkcs11,
-		    CK_SESSION_HANDLE hsession,
-		    unsigned char *data, size_t datalen,
-		    unsigned char *sig, size_t siglen,
-		    struct dbg *dbg)
+CK_RV pkcs11_decrypt_update(struct pkcs11_module *pkcs11,
+			    CK_SESSION_HANDLE hsession,
+			    unsigned char *cpdata, size_t cpdatalen,
+			    unsigned char *pdata, size_t *pdatalen,
+			    struct dbg *dbg)
 {
 	CK_RV ck_rv;
 
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_Verify(hsession, data, datalen, sig, siglen);
+	ck_rv = pkcs11->fns->C_DecryptUpdate(hsession, cpdata, cpdatalen, pdata, pdatalen);
 	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_Verify() failed: %d",
+		ps_dbg_error(dbg, "%s: C_DecryptUpdate() failed: %d",
 			     pkcs11->soname, ck_rv);
 		return ck_rv;
 	}
@@ -284,9 +313,9 @@ CK_RV pkcs11_verify(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 }
 
-CK_RV pkcs11_verify_update(struct pkcs11_module *pkcs11,
-		    CK_SESSION_HANDLE hsession,
-		    unsigned char *data, size_t datalen,
+CK_RV pkcs11_decrypt_final(struct pkcs11_module *pkcs11,
+			   CK_SESSION_HANDLE hsession,
+			   unsigned char *pdata, size_t *pdatalen,
 		    struct dbg *dbg)
 {
 	CK_RV ck_rv;
@@ -294,29 +323,9 @@ CK_RV pkcs11_verify_update(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_VerifyUpdate(hsession, data, datalen);
+	ck_rv = pkcs11->fns->C_DecryptFinal(hsession, pdata, pdatalen);
 	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_VerifyUpdate() failed: %d",
-			     pkcs11->soname, ck_rv);
-		return ck_rv;
-	}
-
-	return CKR_OK;
-}
-
-CK_RV pkcs11_verify_final(struct pkcs11_module *pkcs11,
-		    CK_SESSION_HANDLE hsession,
-		    unsigned char *sig, size_t siglen,
-		    struct dbg *dbg)
-{
-	CK_RV ck_rv;
-
-	if (!pkcs11 || !dbg)
-		return CKR_ARGUMENTS_BAD;
-
-	ck_rv = pkcs11->fns->C_VerifyFinal(hsession, sig, siglen);
-	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_VerifyFinal() failed: %d",
+		ps_dbg_error(dbg, "%s: C_DecryptFinal() failed: %d",
 			     pkcs11->soname, ck_rv);
 		return ck_rv;
 	}
@@ -448,6 +457,8 @@ CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 		pkcs11_attr_id(&template[tidx++], id);
 	if (type)
 		pkcs11_attr_type(&template[tidx++], type);
+	else
+		pkcs11_attr_type(&template[tidx++], str_priv);
 
 	rv = pkcs11->fns->C_FindObjectsInit(session, template, tidx);
 	if (rv != CKR_OK) {
