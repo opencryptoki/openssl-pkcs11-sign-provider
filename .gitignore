@@ -9,6 +9,7 @@
 tests/tmp.*
 tests/ttls
 tests/tsignature
+tests/tecdhe
 *.log
 *.trs
 

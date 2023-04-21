@@ -82,7 +82,7 @@ void fdump(FILE *restrict stream, const unsigned char *p, size_t len)
 		if (!(i % 8)) {
 			if (i)
 				fprintf(stream, "\n");
-			fprintf(stream, "%p:", &p[i]);
+			fprintf(stream, "  %p:", &p[i]);
 		}
 		fprintf(stream, " 0x%02x", p[i]);
 	}
