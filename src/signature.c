@@ -67,7 +67,7 @@ err:
 	return OSSL_RV_ERR;
 }
 
-static int signature_op_ctx_init_fwd(struct op_ctx *opctx)
+static int signature_op_ctx_new_fwd(struct op_ctx *opctx)
 {
 	OSSL_FUNC_signature_freectx_fn *fwd_freectx_fn;
 	OSSL_FUNC_signature_newctx_fn *fwd_newctx_fn;
@@ -120,8 +120,8 @@ static struct op_ctx *signature_op_ctx_new(
 		return NULL;
 	}
 
-	if (signature_op_ctx_init_fwd(opctx) != OSSL_RV_OK) {
-		ps_dbg_error(&pctx->dbg, "ERROR: signature_op_ctx_init_fwd() failed");
+	if (signature_op_ctx_new_fwd(opctx) != OSSL_RV_OK) {
+		ps_dbg_error(&pctx->dbg, "ERROR: signature_op_ctx_new_fwd() failed");
 		goto err;
 	}
 
@@ -171,7 +171,7 @@ static void *ps_signature_op_dupctx(void *vopctx)
 
 	opctx_new = op_ctx_dup(opctx);
 	if (!opctx_new) {
-		ps_opctx_debug(opctx, "ERROR: ps_op_dupctx failed");
+		ps_opctx_debug(opctx, "ERROR: op_ctx_dup() failed");
 		return NULL;
 	}
 	opctx_new->mech = opctx->mech;
