@@ -13,85 +13,75 @@
 #include "common.h"
 #include "debug.h"
 #include "ossl.h"
+#include "pkcs11.h"
 
-#define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
-
-typedef int (*ps_rsa_decrypt_t)(const unsigned char *key_blob,
-				size_t key_blob_length,
-				unsigned char *to, size_t *tolen,
-				const unsigned char *from, size_t fromlen,
-				int padding_type, void *private, bool debug);
-typedef int (*ps_rsa_decrypt_oaep_t)(const unsigned char *key_blob,
-				     size_t key_blob_length,
-				     unsigned char *to, size_t *tolen,
-				     const unsigned char *from, size_t fromlen,
-				     int oaep_md_nid, int mgfmd_nid,
-				     unsigned char *label, int label_len,
-				     void *private, bool debug);
-
-struct ps_funcs {
-	ps_rsa_decrypt_t	rsa_decrypt;
-	ps_rsa_decrypt_oaep_t	rsa_decrypt_oaep;
-};
-
-struct ps_op_ctx {
-	struct provider_ctx *pctx;
-	struct obj *key;
-
-	CK_OBJECT_HANDLE ohandle;
-	CK_SESSION_HANDLE shandle;
-
-	int type;
-
-	/* legacy */
-	const char *propq;
-	void *fwd_op_ctx; /* shadow context of default provider */
-	void (*fwd_op_ctx_free)(void *fwd_op_ctx);
-	int operation;
-	OSSL_FUNC_signature_sign_fn *sign_fn;
-	EVP_MD_CTX *mdctx;
-	EVP_MD *md;
-};
-
-static void ps_op_freectx(void *vopctx __unused)
+static int asym_set_mech_type(CK_MECHANISM_PTR mech, const OSSL_PARAM *p)
 {
+	int pad_mode;
+
+	switch (p->data_type) {
+	case OSSL_PARAM_INTEGER:
+		if (OSSL_PARAM_get_int(p, &pad_mode) != OSSL_RV_OK)
+			return OSSL_RV_ERR;
+
+		switch (pad_mode) {
+		case RSA_NO_PADDING:
+			mech->mechanism = CKM_RSA_X_509;
+			break;
+		case RSA_PKCS1_PADDING:
+			mech->mechanism = CKM_RSA_PKCS;
+			break;
+		case RSA_PKCS1_OAEP_PADDING:
+			mech->mechanism = CKM_RSA_PKCS_OAEP;
+			break;
+		case RSA_X931_PADDING:
+			mech->mechanism = CKM_RSA_X9_31;
+			break;
+		default:
+			return OSSL_RV_ERR;
+		}
+		break;
+	case OSSL_PARAM_UTF8_STRING:
+		if (!p->data)
+			return OSSL_RV_ERR;
+
+		if (strcmp(p->data, OSSL_PKEY_RSA_PAD_MODE_NONE) == 0)
+			mech->mechanism = CKM_RSA_X_509;
+		else if (strcmp(p->data, OSSL_PKEY_RSA_PAD_MODE_PKCSV15) == 0)
+			mech->mechanism = CKM_RSA_PKCS;
+		else if (strcmp(p->data, OSSL_PKEY_RSA_PAD_MODE_OAEP) == 0)
+			mech->mechanism = CKM_RSA_PKCS_OAEP;
+		else if (strcmp(p->data, OSSL_PKEY_RSA_PAD_MODE_X931) == 0)
+			mech->mechanism = CKM_RSA_X9_31;
+		else
+			return OSSL_RV_ERR;
+		break;
+	default:
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
 }
 
-static struct ps_op_ctx *ps_op_dupctx(struct ps_op_ctx *opctx __unused)
-{
-	return NULL;
-}
+#define DISPATCH_ASYMCIPHER(tname, name) \
+  DECL_DISPATCH_FUNC(asym_cipher, tname, name)
+DISPATCH_ASYMCIPHER(newctx, ps_asym_rsa_newctx);
+DISPATCH_ASYMCIPHER(dupctx, ps_asym_op_dupctx);
+DISPATCH_ASYMCIPHER(get_ctx_params, ps_asym_op_get_ctx_params);
+DISPATCH_ASYMCIPHER(set_ctx_params, ps_asym_op_set_ctx_params);
+DISPATCH_ASYMCIPHER(encrypt_init, ps_asym_op_encrypt_init);
+DISPATCH_ASYMCIPHER(encrypt, ps_asym_op_encrypt);
+DISPATCH_ASYMCIPHER(decrypt_init, ps_asym_op_decrypt_init);
+DISPATCH_ASYMCIPHER(decrypt, ps_asym_rsa_decrypt);
+DISPATCH_ASYMCIPHER(gettable_ctx_params, ps_asym_rsa_gettable_ctx_params);
+DISPATCH_ASYMCIPHER(settable_ctx_params, ps_asym_rsa_settable_ctx_params);
 
-static struct ps_op_ctx *ps_op_newctx(struct provider_ctx *pctx __unused, const char *propq __unused, int type __unused)
-{
-	return NULL;
-}
-
-static struct ps_op_ctx *ps_op_init(struct ps_op_ctx *opctx __unused, struct obj *key __unused, int operation __unused)
-{
-	return NULL;
-}
-
-#define DISPATCH_ASYMCIPHER(tname, name) DECL_DISPATCH_FUNC(asym_cipher, tname, name)
-DISPATCH_ASYMCIPHER(newctx, ps_asym_newctx);
-DISPATCH_ASYMCIPHER(dupctx, ps_asym_dupctx);
-DISPATCH_ASYMCIPHER(get_ctx_params, ps_asym_get_ctx_params);
-DISPATCH_ASYMCIPHER(set_ctx_params, ps_asym_set_ctx_params);
-DISPATCH_ASYMCIPHER(encrypt_init, ps_asym_encrypt_init);
-DISPATCH_ASYMCIPHER(encrypt, ps_asym_encrypt);
-DISPATCH_ASYMCIPHER(decrypt_init, ps_asym_decrypt_init);
-DISPATCH_ASYMCIPHER(decrypt, ps_asym_decrypt);
-DISPATCH_ASYMCIPHER(gettable_ctx_params, ps_asym_gettable_ctx_params);
-DISPATCH_ASYMCIPHER(settable_ctx_params, ps_asym_settable_ctx_params);
-DISPATCH_ASYMCIPHER(freectx, ps_op_freectx);
-
-static struct ps_op_ctx *ps_asym_op_newctx(
-					struct provider_ctx *pctx,
+static struct op_ctx *ps_asym_op_newctx(struct provider_ctx *pctx,
 					int pkey_type)
 {
 	OSSL_FUNC_asym_cipher_freectx_fn *fwd_freectx_fn;
 	OSSL_FUNC_asym_cipher_newctx_fn *fwd_newctx_fn;
-	struct ps_op_ctx *opctx;
+	struct op_ctx *opctx;
 
 	if (pctx == NULL)
 		return NULL;
@@ -117,7 +107,7 @@ static struct ps_op_ctx *ps_asym_op_newctx(
 		return NULL;
 	}
 
-	opctx = ps_op_newctx(pctx, NULL, pkey_type);
+	opctx = op_ctx_new(pctx, NULL, pkey_type);
 	if (opctx == NULL) {
 		ps_dbg_error(&pctx->dbg, "ERROR: ps_op_newctx failed");
 		return NULL;
@@ -127,7 +117,7 @@ static struct ps_op_ctx *ps_asym_op_newctx(
 	if (opctx->fwd_op_ctx == NULL) {
 		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 			       "fwd_newctx_fn failed");
-		ps_op_freectx(opctx);
+		op_ctx_free(opctx);
 		return NULL;
 	}
 	opctx->fwd_op_ctx_free = fwd_freectx_fn;
@@ -136,53 +126,53 @@ static struct ps_op_ctx *ps_asym_op_newctx(
 	return opctx;
 }
 
-static void *ps_asym_op_dupctx(void *vctx)
+static void *ps_asym_op_dupctx(void *vopctx)
 {
 	OSSL_FUNC_asym_cipher_dupctx_fn *fwd_dupctx_fn;
-	struct ps_op_ctx *ctx = vctx;
-	struct ps_op_ctx *new_ctx;
+	struct op_ctx *opctx = vopctx;
+	struct op_ctx *opctx_new;
 
-	if (ctx == NULL)
+	if (!opctx)
 		return NULL;
 
-	ps_opctx_debug(ctx, "ctx: %p", ctx);
+	ps_opctx_debug(opctx, "opctx: %p", opctx);
 
 	fwd_dupctx_fn = (OSSL_FUNC_asym_cipher_dupctx_fn *)
-			fwd_asym_get_func(&ctx->pctx->fwd,
-				ctx->type, OSSL_FUNC_ASYM_CIPHER_DUPCTX,
-				&ctx->pctx->dbg);
+			fwd_asym_get_func(&opctx->pctx->fwd,
+				opctx->type, OSSL_FUNC_ASYM_CIPHER_DUPCTX,
+				&opctx->pctx->dbg);
 	if (fwd_dupctx_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
 				 "no default dupctx_fn");
 		return NULL;
 	}
 
-	new_ctx = ps_op_dupctx(ctx);
-	if (new_ctx == NULL) {
-		ps_opctx_debug(ctx, "ERROR: ps_op_dupctx failed");
+	opctx_new = op_ctx_dup(opctx);
+	if (opctx_new == NULL) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_dup failed");
 		return NULL;
 	}
 
-	new_ctx->fwd_op_ctx = fwd_dupctx_fn(ctx->fwd_op_ctx);
-	if (new_ctx->fwd_op_ctx == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+	opctx_new->fwd_op_ctx = fwd_dupctx_fn(opctx->fwd_op_ctx);
+	if (opctx_new->fwd_op_ctx == NULL) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 				 "fwd_dupctx_fn failed");
-		ps_op_freectx(new_ctx);
+		op_ctx_free(opctx_new);
 		return NULL;
 	}
 
-	ps_opctx_debug(ctx, "new_ctx: %p", new_ctx);
-	return new_ctx;
+	ps_opctx_debug(opctx, "opctx_new: %p", opctx_new);
+	return opctx_new;
 }
 
 static int ps_asym_op_get_ctx_params(void *vctx, OSSL_PARAM params[])
 {
 	OSSL_FUNC_asym_cipher_get_ctx_params_fn *fwd_get_params_fn;
-	struct ps_op_ctx *ctx = vctx;
+	struct op_ctx *ctx = vctx;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL)
-		return 0;
+		return OSSL_RV_ERR;
 
 	ps_opctx_debug(ctx, "ctx: %p", ctx);
 	for (p = params; p != NULL && p->key != NULL; p++)
@@ -200,25 +190,17 @@ static int ps_asym_op_get_ctx_params(void *vctx, OSSL_PARAM params[])
 			put_error_op_ctx(ctx,
 					 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 					 "fwd_get_params_fn failed");
-			return 0;
+			return OSSL_RV_ERR;
 		}
 	}
 
-	return 1;
+	return OSSL_RV_OK;
 }
 
-static int ps_asym_op_set_ctx_params(void *vopctx, const OSSL_PARAM params[])
+static int ps_asym_op_set_ctx_params_fwd(struct op_ctx *opctx,
+					 const OSSL_PARAM params[])
 {
 	OSSL_FUNC_asym_cipher_set_ctx_params_fn *fwd_set_params_fn;
-	struct ps_op_ctx *opctx = vopctx;
-	const OSSL_PARAM *p;
-
-	if (opctx == NULL)
-		return 0;
-
-	ps_opctx_debug(opctx, "opctx: %p", opctx);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(opctx, "param: %s", p->key);
 
 	fwd_set_params_fn = (OSSL_FUNC_asym_cipher_set_ctx_params_fn *)
 			fwd_asym_get_func(&opctx->pctx->fwd,
@@ -227,20 +209,43 @@ static int ps_asym_op_set_ctx_params(void *vopctx, const OSSL_PARAM params[])
 				&opctx->pctx->dbg);
 
 	/* fwd_set_params_fn is optional */
-	if (fwd_set_params_fn != NULL) {
-		if (!fwd_set_params_fn(opctx->fwd_op_ctx, params)) {
-			put_error_op_ctx(opctx,
-					 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-					 "fwd_set_params_fn failed");
-			return 0;
-		}
+	if ((fwd_set_params_fn) &&
+	    (fwd_set_params_fn(opctx->fwd_op_ctx, params) != OSSL_RV_OK)) {
+		put_error_op_ctx(opctx,
+				 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_set_params_fn failed");
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	return OSSL_RV_OK;
+}
+
+static int ps_asym_op_set_ctx_params(void *vopctx, const OSSL_PARAM params[])
+{
+	struct op_ctx *opctx = vopctx;
+	const OSSL_PARAM *p;
+
+	if (opctx == NULL)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p", opctx);
+	for (p = params; p != NULL && p->key != NULL; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
+
+	if (!opctx->key->use_pkcs11)
+		return ps_asym_op_set_ctx_params_fwd(opctx, params);
+
+	p = OSSL_PARAM_locate_const(params, OSSL_ASYM_CIPHER_PARAM_PAD_MODE);
+	if ((p) && (asym_set_mech_type(&opctx->mech, p) != OSSL_RV_OK)) {
+		ps_opctx_debug(opctx, "asym_set_mech_type() failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
 }
 
 static const OSSL_PARAM *ps_asym_op_gettable_ctx_params(
-				struct ps_op_ctx *opctx,
+				struct op_ctx *opctx,
 				struct provider_ctx *pctx, int pkey_type)
 {
 	OSSL_FUNC_asym_cipher_gettable_ctx_params_fn
@@ -259,7 +264,7 @@ static const OSSL_PARAM *ps_asym_op_gettable_ctx_params(
 				&pctx->dbg);
 
 	/* fwd_gettable_params_fn is optional */
-	if (fwd_gettable_params_fn != NULL)
+	if (fwd_gettable_params_fn)
 		params = fwd_gettable_params_fn(opctx->fwd_op_ctx,
 						    pctx->fwd.ctx);
 
@@ -269,18 +274,20 @@ static const OSSL_PARAM *ps_asym_op_gettable_ctx_params(
 	return params;
 }
 
-static const OSSL_PARAM *ps_asym_op_settable_ctx_params(
-				struct ps_op_ctx *opctx,
+static const OSSL_PARAM asym_params[] = {
+	OSSL_PARAM_utf8_string(OSSL_ASYM_CIPHER_PARAM_PAD_MODE, NULL, 0),
+	OSSL_PARAM_utf8_string(OSSL_ASYM_CIPHER_PARAM_OAEP_DIGEST, NULL, 0),
+	OSSL_PARAM_utf8_string(OSSL_ASYM_CIPHER_PARAM_MGF1_DIGEST, NULL, 0),
+	OSSL_PARAM_octet_string(OSSL_ASYM_CIPHER_PARAM_OAEP_LABEL, NULL, 0),
+	OSSL_PARAM_END,
+};
+
+static const OSSL_PARAM *ps_asym_op_settable_ctx_params_fwd(
+				struct op_ctx *opctx,
 				struct provider_ctx *pctx, int pkey_type)
 {
 	OSSL_FUNC_asym_cipher_settable_ctx_params_fn
 						*fwd_settable_params_fn;
-	const OSSL_PARAM *params = NULL, *p;
-
-	if (opctx == NULL || pctx == NULL)
-		return NULL;
-
-	ps_dbg_debug(&pctx->dbg, "pkey_type: %d", pkey_type);
 
 	fwd_settable_params_fn =
 		(OSSL_FUNC_asym_cipher_settable_ctx_params_fn *)
@@ -289,9 +296,26 @@ static const OSSL_PARAM *ps_asym_op_settable_ctx_params(
 				&pctx->dbg);
 
 	/* fwd_settable_params_fn is optional */
-	if (fwd_settable_params_fn != NULL)
-		params = fwd_settable_params_fn(opctx->fwd_op_ctx,
-						    pctx->fwd.ctx);
+	if (!fwd_settable_params_fn)
+		return NULL;
+
+	return fwd_settable_params_fn(opctx->fwd_op_ctx, pctx->fwd.ctx);
+}
+
+static const OSSL_PARAM *ps_asym_op_settable_ctx_params(
+				struct op_ctx *opctx,
+				struct provider_ctx *pctx, int pkey_type)
+{
+	const OSSL_PARAM *params = NULL, *p;
+
+	if (opctx == NULL || pctx == NULL)
+		return NULL;
+
+	ps_dbg_debug(&pctx->dbg, "pkey_type: %d", pkey_type);
+
+	params = (opctx->key && opctx->key->use_pkcs11) ?
+		asym_params :
+		ps_asym_op_settable_ctx_params_fwd(opctx, pctx, pkey_type);
 
 	for (p = params; p != NULL && p->key != NULL; p++)
 		ps_dbg_debug(&pctx->dbg, "param: %s", p->key);
@@ -299,7 +323,7 @@ static const OSSL_PARAM *ps_asym_op_settable_ctx_params(
 	return params;
 }
 
-static EVP_MD *ps_asym_op_get_oaep_md(struct ps_op_ctx *opctx)
+static EVP_MD *ps_asym_op_get_oaep_md(struct op_ctx *opctx)
 {
 	char mdprops[256], mdname[50];
 	OSSL_PARAM ctx_params[] = {
@@ -329,13 +353,13 @@ static EVP_MD *ps_asym_op_get_oaep_md(struct ps_op_ctx *opctx)
 		strcpy(mdprops, "");
 	}
 	md = EVP_MD_fetch(opctx->pctx->core.libctx,
-			  mdname, mdprops[0] != '\0' ? mdprops : opctx->propq);
+			  mdname, mdprops[0] != '\0' ? mdprops : opctx->prop);
 	if (md == NULL) {
 		put_error_op_ctx(opctx, PS_ERR_MISSING_PARAMETER,
 				 "EVP_MD_fetch failed to fetch '%s' using "
 				 "property query '%s'", mdname,
 				 mdprops[0] != '\0' ? mdprops :
-					opctx->propq != NULL ? opctx->propq : "");
+					opctx->prop != NULL ? opctx->prop : "");
 		return NULL;
 	}
 
@@ -343,7 +367,7 @@ static EVP_MD *ps_asym_op_get_oaep_md(struct ps_op_ctx *opctx)
 	return md;
 }
 
-static EVP_MD *ps_asym_op_get_mgf_md(struct ps_op_ctx *ctx)
+static EVP_MD *ps_asym_op_get_mgf_md(struct op_ctx *ctx)
 {
 	char mdprops[256], mdname[50];
 	OSSL_PARAM ctx_params[] = {
@@ -366,13 +390,14 @@ static EVP_MD *ps_asym_op_get_mgf_md(struct ps_op_ctx *ctx)
 	}
 
 	md = EVP_MD_fetch(ctx->pctx->core.libctx,
-			  mdname, mdprops[0] != '\0' ? mdprops : ctx->propq);
+			  mdname, mdprops[0] != '\0' ? mdprops : ctx->prop);
 	if (md == NULL) {
 		put_error_op_ctx(ctx, PS_ERR_MISSING_PARAMETER,
 				 "EVP_MD_fetch failed to fetch '%s' using "
 				 "property query '%s'", mdname,
-				 mdprops[0] != '\0' ? mdprops :
-					ctx->propq != NULL ? ctx->propq : "");
+				 (mdprops[0]) ?
+					mdprops :
+					(ctx->prop) ? ctx->prop : "");
 		return NULL;
 	}
 
@@ -380,7 +405,7 @@ static EVP_MD *ps_asym_op_get_mgf_md(struct ps_op_ctx *ctx)
 	return md;
 }
 
-static int ps_asym_op_get_oaep_label(struct ps_op_ctx *ctx,
+static int ps_asym_op_get_oaep_label(struct op_ctx *ctx,
 					  unsigned char **label)
 {
 	OSSL_PARAM ctx_params[] = {
@@ -389,7 +414,6 @@ static int ps_asym_op_get_oaep_label(struct ps_op_ctx *ctx,
 		OSSL_PARAM_END
 	};
 	int oaep_label_len;
-
 
 	ps_opctx_debug(ctx, "ctx: %p", ctx);
 
@@ -408,7 +432,7 @@ static int ps_asym_op_get_oaep_label(struct ps_op_ctx *ctx,
 	return oaep_label_len;
 }
 
-static int ps_asym_op_get_padding(struct ps_op_ctx *ctx)
+static int ps_asym_op_get_padding(struct op_ctx *ctx)
 {
 	char padding[50];
 	OSSL_PARAM ctx_params[] = {
@@ -432,20 +456,11 @@ static int ps_asym_op_get_padding(struct ps_op_ctx *ctx)
 	return ossl_parse_padding(padding);
 }
 
-static int ps_asym_op_encrypt_init(void *vctx, void *vkey,
-					const OSSL_PARAM params[])
+static int ps_asym_op_encrypt_init_fwd(struct op_ctx *ctx,
+				       struct obj *key,
+				       const OSSL_PARAM params[])
 {
 	OSSL_FUNC_asym_cipher_encrypt_init_fn *fwd_encrypt_init_fn;
-	struct ps_op_ctx *ctx = vctx;
-	struct obj *key = vkey;
-	const OSSL_PARAM *p;
-
-	if (ctx == NULL || key == NULL)
-		return 0;
-
-	ps_opctx_debug(ctx, "ctx: %p key: %p", ctx, key);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(ctx, "param: %s", p->key);
 
 	fwd_encrypt_init_fn = (OSSL_FUNC_asym_cipher_encrypt_init_fn *)
 				fwd_asym_get_func(&ctx->pctx->fwd,
@@ -455,62 +470,132 @@ static int ps_asym_op_encrypt_init(void *vctx, void *vkey,
 	if (fwd_encrypt_init_fn == NULL) {
 		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
 				 "no default encrypt_init_fn");
-		return 0;
-	}
-
-	if (!ps_op_init(ctx, key, EVP_PKEY_OP_ENCRYPT)) {
-		ps_opctx_debug(ctx, "ERROR: ps_op_init failed");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
 	if (!fwd_encrypt_init_fn(ctx->fwd_op_ctx, key->fwd_key,
 				     params)) {
 		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 				 "fwd_encrypt_init_fn failed");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	return OSSL_RV_OK;
 }
 
-static int ps_asym_op_decrypt_init(void *vctx, void *vkey,
+static int ps_asym_op_encrypt_init(void *vctx, void *vkey,
 					const OSSL_PARAM params[])
 {
-	OSSL_FUNC_asym_cipher_decrypt_init_fn *fwd_decrypt_init_fn;
-	struct ps_op_ctx *ctx = vctx;
+	struct op_ctx *ctx = vctx;
 	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
 	if (ctx == NULL || key == NULL)
-		return 0;
+		return OSSL_RV_ERR;
 
 	ps_opctx_debug(ctx, "ctx: %p key: %p", ctx, key);
 	for (p = params; p != NULL && p->key != NULL; p++)
 		ps_opctx_debug(ctx, "param: %s", p->key);
 
+	if (!op_ctx_init(ctx, key, EVP_PKEY_OP_ENCRYPT)) {
+		ps_opctx_debug(ctx, "ERROR: op_ctx_init failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (!key->use_pkcs11)
+		return ps_asym_op_encrypt_init_fwd(ctx, key, params);
+
+	/* TODO pkcs11 implementation */
+	return OSSL_RV_ERR;
+}
+
+static int ps_asym_op_decrypt_init_fwd(struct op_ctx *opctx, struct obj *key,
+				       const OSSL_PARAM params[])
+{
+	OSSL_FUNC_asym_cipher_decrypt_init_fn *fwd_decrypt_init_fn;
+
 	fwd_decrypt_init_fn = (OSSL_FUNC_asym_cipher_decrypt_init_fn *)
-				fwd_asym_get_func(&ctx->pctx->fwd, ctx->type,
+				fwd_asym_get_func(&opctx->pctx->fwd, opctx->type,
 					OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT,
-					&ctx->pctx->dbg);
+					&opctx->pctx->dbg);
 	if (fwd_decrypt_init_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
 				 "no default decrypt_init_fn");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	if (!ps_op_init(ctx, key, EVP_PKEY_OP_DECRYPT)) {
-		ps_opctx_debug(ctx, "ERROR: ps_op_init failed");
-		return 0;
-	}
-
-	if (!fwd_decrypt_init_fn(ctx->fwd_op_ctx, key->fwd_key,
+	if (!fwd_decrypt_init_fn(opctx->fwd_op_ctx, key->fwd_key,
 				     params)) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 				 "fwd_decrypt_init_fn failed");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	return OSSL_RV_OK;
+}
+
+static int ps_asym_op_decrypt_init(void *vctx, void *vkey,
+				   const OSSL_PARAM params[])
+{
+	struct op_ctx *opctx = vctx;
+	struct obj *key = vkey;
+	const OSSL_PARAM *p;
+
+	if (!opctx || !key)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p", opctx, key);
+	for (p = params; p != NULL && p->key != NULL; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
+
+	if (op_ctx_init(opctx, key, EVP_PKEY_OP_DECRYPT) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (!key->use_pkcs11)
+		return ps_asym_op_decrypt_init_fwd(opctx, key, params);
+
+	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (ps_asym_op_set_ctx_params(opctx, params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: ps_asym_op_set_ctx_params() failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
+}
+
+static int ps_asym_op_encrypt_fwd(struct op_ctx *opctx,
+				  unsigned char *out, size_t *outlen,
+				  size_t outsize, const unsigned char *in,
+				  size_t inlen)
+{
+	OSSL_FUNC_asym_cipher_encrypt_fn *fwd_encrypt_fn;
+
+	fwd_encrypt_fn = (OSSL_FUNC_asym_cipher_encrypt_fn *)
+			fwd_asym_get_func(&opctx->pctx->fwd,
+				opctx->type, OSSL_FUNC_ASYM_CIPHER_ENCRYPT,
+				&opctx->pctx->dbg);
+	if (fwd_encrypt_fn == NULL) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no default encrypt_fn");
+		return OSSL_RV_ERR;
+	}
+
+	if (!fwd_encrypt_fn(opctx->fwd_op_ctx, out, outlen, outsize,
+				in, inlen)) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_encrypt_fn failed");
+		return OSSL_RV_ERR;
+	}
+
+	ps_opctx_debug(opctx, "outlen: %lu", *outlen);
+
+	return OSSL_RV_OK;
 }
 
 static int ps_asym_op_encrypt(void *vctx,
@@ -518,70 +603,85 @@ static int ps_asym_op_encrypt(void *vctx,
 				   size_t outsize, const unsigned char *in,
 				   size_t inlen)
 {
-	OSSL_FUNC_asym_cipher_encrypt_fn *fwd_encrypt_fn;
-	struct ps_op_ctx *ctx = vctx;
+	struct op_ctx *opctx = vctx;
 
-	if (ctx == NULL || in == NULL || outlen == NULL)
-		return 0;
+	if (opctx == NULL || in == NULL || outlen == NULL)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p key: %p inlen: %lu outsize: %lu",
-			ctx, ctx->key, inlen, outsize);
+	ps_opctx_debug(opctx, "opctx: %p key: %p inlen: %lu outsize: %lu",
+			opctx, opctx->key, inlen, outsize);
 
-	fwd_encrypt_fn = (OSSL_FUNC_asym_cipher_encrypt_fn *)
-			fwd_asym_get_func(&ctx->pctx->fwd,
-				ctx->type, OSSL_FUNC_ASYM_CIPHER_ENCRYPT,
-				&ctx->pctx->dbg);
-	if (fwd_encrypt_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default encrypt_fn");
-		return 0;
-	}
+	if (!opctx->key->use_pkcs11)
+		return  ps_asym_op_encrypt_fwd(opctx, out, outlen, outsize,
+					       in, inlen);
 
-	if (!fwd_encrypt_fn(ctx->fwd_op_ctx, out, outlen, outsize,
-				in, inlen)) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "fwd_encrypt_fn failed");
-		return 0;
-	}
-
-	ps_opctx_debug(ctx, "outlen: %lu", *outlen);
-
-	return 1;
+	/* not supported */
+	return OSSL_RV_ERR;
 }
 
-static int ps_asym_op_decrypt(struct ps_op_ctx *ctx,
-				   unsigned char *out, size_t *outlen,
-				   size_t outsize, const unsigned char *in,
-				   size_t inlen)
+static int ps_asym_op_decrypt_fwd(struct op_ctx *opctx,
+				  unsigned char *out, size_t *outlen,
+				  size_t outsize, const unsigned char *in,
+				  size_t inlen)
 {
 	OSSL_FUNC_asym_cipher_decrypt_fn *fwd_decrypt_fn;
 
-	if (ctx == NULL || in == NULL || outlen == NULL)
-		return 0;
-
-	ps_opctx_debug(ctx, "ctx: %p key: %p inlen: %lu outsize: %lu",
-			ctx, ctx->key, inlen, outsize);
-
 	fwd_decrypt_fn = (OSSL_FUNC_asym_cipher_decrypt_fn *)
-			fwd_asym_get_func(&ctx->pctx->fwd,
-				ctx->type, OSSL_FUNC_ASYM_CIPHER_DECRYPT,
-				&ctx->pctx->dbg);
+			fwd_asym_get_func(&opctx->pctx->fwd,
+				opctx->type, OSSL_FUNC_ASYM_CIPHER_DECRYPT,
+				&opctx->pctx->dbg);
 	if (fwd_decrypt_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
 				 "no default decrypt_fn");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	if (!fwd_decrypt_fn(ctx->fwd_op_ctx, out, outlen, outsize,
+	if (!fwd_decrypt_fn(opctx->fwd_op_ctx, out, outlen, outsize,
 				in, inlen)) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 				 "fwd_decrypt_fn failed");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	ps_opctx_debug(ctx, "outlen: %lu", *outlen);
+	ps_opctx_debug(opctx, "outlen: %lu", *outlen);
+	return OSSL_RV_OK;
+}
 
-	return 1;
+static int ps_asym_op_decrypt(struct op_ctx *opctx,
+			      unsigned char *out, size_t *outlen,
+			      size_t outsize, const unsigned char *in,
+			      size_t inlen)
+{
+	size_t len;
+
+	if (!opctx || !in || !outlen)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p inlen: %lu outsize: %lu",
+			opctx, opctx->key, inlen, outsize);
+
+	if (!opctx->key->use_pkcs11)
+		return ps_asym_op_decrypt_fwd(opctx, out, outlen, outsize,
+					      in, inlen);
+
+	if (pkcs11_decrypt_init(opctx->pctx->pkcs11, opctx->hsession,
+				&opctx->mech, opctx->hobject,
+				&opctx->pctx->dbg) != CKR_OK) {
+		ps_opctx_debug(opctx, "ERROR: pkcs11_decrypt_init() failed");
+		return OSSL_RV_ERR;
+	}
+
+	len = outsize;
+	if (pkcs11_decrypt(opctx->pctx->pkcs11, opctx->hsession,
+			   in, inlen, out, &len,
+			   &opctx->pctx->dbg) != CKR_OK) {
+		ps_opctx_debug(opctx, "ERROR: pkcs11_decrypt() failed");
+		return OSSL_RV_ERR;
+	}
+	*outlen = len;
+
+	ps_opctx_debug(opctx, "outlen: %lu", *outlen);
+	return OSSL_RV_OK;
 }
 
 static void *ps_asym_rsa_newctx(void *vprovctx)
@@ -599,7 +699,7 @@ static const OSSL_PARAM *ps_asym_rsa_gettable_ctx_params(void *vctx,
 							      void *vprovctx)
 {
 	struct provider_ctx *pctx = vprovctx;
-	struct ps_op_ctx *opctx = vctx;
+	struct op_ctx *opctx = vctx;
 
 	if (pctx == NULL)
 		return NULL;
@@ -612,7 +712,7 @@ static const OSSL_PARAM *ps_asym_rsa_settable_ctx_params(void *vctx,
 							      void *vprovctx)
 {
 	struct provider_ctx *pctx = vprovctx;
-	struct ps_op_ctx *opctx = vctx;
+	struct op_ctx *opctx = vctx;
 
 	if (pctx == NULL)
 		return NULL;
@@ -621,179 +721,37 @@ static const OSSL_PARAM *ps_asym_rsa_settable_ctx_params(void *vctx,
 	return ps_asym_op_settable_ctx_params(opctx, pctx, EVP_PKEY_RSA);
 }
 
-static int ps_asym_rsa_decrypt(void *vctx,
-				    unsigned char *out, size_t *outlen,
-				    size_t outsize, const unsigned char *in,
-				    size_t inlen)
+static int ps_asym_rsa_decrypt(void *vopctx,
+			       unsigned char *out, size_t *outlen,
+			       size_t outsize, const unsigned char *in,
+			       size_t inlen)
 {
-	int rsa_size, pad_mode, oaep_label_len = 0, rc;
-	EVP_MD *oaep_md = NULL, *mgf_md = NULL;
-	struct ps_op_ctx *ctx = vctx;
-	unsigned char *oaep_label = NULL;
-	unsigned char *tmp = NULL;
-	struct ps_key *key;
-	struct ps_funcs *funcs;
+	struct op_ctx *opctx = vopctx;
 
-	if (ctx == NULL || in == NULL || outlen == NULL)
-		return 0;
+	if (!opctx || !in || !outlen)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p key: %p inlen: %lu outsize: %lu",
-			ctx, ctx->key, inlen, outsize);
+	ps_opctx_debug(opctx, "opctx: %p key: %p in: %p, inlen: %lu out: %p, outsize: %lu",
+		       opctx, opctx->key, in, inlen, out, outsize);
 
-	if (ctx->key == NULL || ctx->operation != EVP_PKEY_OP_DECRYPT) {
-		put_error_op_ctx(ctx, PS_ERR_OPRATION_NOT_INITIALIZED,
+	if (opctx->key == NULL || opctx->operation != EVP_PKEY_OP_DECRYPT) {
+		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
 				 "decrypt operation not initialized");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	/* For clear key, let the default provider handle it */
-	if (ctx->key->secure_key == NULL)
-		return ps_asym_op_decrypt(ctx, out, outlen, outsize,
-					    in, inlen);
+	if (opctx->key->use_pkcs11)
+		return ps_asym_op_decrypt(opctx, out, outlen, outsize,
+					  in, inlen);
 
-#if 0
-	funcs = ctx->key->funcs;
-	if (funcs == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_MISSING_PARAMETER,
-				 "no secure key funcs");
-		return 0;
-	}
-
-	key = ctx->key;
-
-	rsa_size = ps_keymgmt_get_size(key);
-	if (rsa_size <= 0) {
-		ps_opctx_debug(ctx, "ps_keymgmt_get_size failed");
-		return 0;
-	}
-#endif
-
-	if (out == NULL) {
-		tmp = OPENSSL_zalloc(rsa_size);
-		if (tmp == NULL) {
-			put_error_op_ctx(ctx, PS_ERR_MALLOC_FAILED,
-					 "OPENSSL_zalloc failed");
-			return 0;
-		}
-		out = tmp;
-		outsize = rsa_size;
-	}
-
-	if (outsize < (size_t)rsa_size) {
-		put_error_op_ctx(ctx, PS_ERR_INVALID_PARAM,
-				 "output buffer length invalid");
-		return 0;
-	}
-
-	pad_mode = ps_asym_op_get_padding(ctx);
-	switch (pad_mode) {
-	case RSA_NO_PADDING:
-	case RSA_PKCS1_PADDING:
-	case RSA_X931_PADDING:
-		break;
-
-	case RSA_PKCS1_OAEP_PADDING:
-		oaep_label_len = ps_asym_op_get_oaep_label(ctx,
-								&oaep_label);
-		if (oaep_label_len < 0) {
-			ps_opctx_debug(ctx,
-				"ERROR: ps_rsa_asym_get_oaep_label failed");
-			rc = 0;
-			goto out;
-		}
-
-		oaep_md = ps_asym_op_get_oaep_md(ctx);
-		if (oaep_md == NULL) {
-			ps_opctx_debug(ctx,
-				"ERROR: ps_asym_op_get_oaep_md failed");
-			rc = 0;
-			goto out;
-		}
-
-		mgf_md = ps_asym_op_get_mgf_md(ctx);
-		if (mgf_md == NULL) {
-			ps_opctx_debug(ctx,
-				"ERROR: ps_asym_op_get_mgf_md failed");
-			rc = 0;
-			goto out;
-		}
-		break;
-	default:
-		put_error_op_ctx(ctx, PS_ERR_INVALID_PADDING,
-				 "unknown/unsupported padding: %d", pad_mode);
-		return 0;
-	}
-
-	*outlen = outsize;
-
-	switch (pad_mode) {
-	case RSA_PKCS1_OAEP_PADDING:
-		if (funcs->rsa_decrypt_oaep == NULL) {
-			put_error_op_ctx(ctx, PS_ERR_MISSING_PARAMETER,
-					 "no secure key decrypt function");
-			rc = 0;
-			goto out;
-		}
-
-#if 0
-		rc = funcs->rsa_decrypt_oaep(key->secure_key,
-					     key->secure_key_size,
-					     out, outlen, in, inlen,
-					     EVP_MD_type(oaep_md),
-					     EVP_MD_type(mgf_md),
-					     oaep_label, oaep_label_len,
-					     key->private,
-					     ps_dbg_enabled(&ctx->pctx->dbg));
-#endif
-		break;
-
-	default:
-		if (funcs->rsa_decrypt == NULL) {
-			put_error_op_ctx(ctx, PS_ERR_MISSING_PARAMETER,
-					 "no secure key decrypt function");
-			rc = 0;
-			goto out;
-		}
-
-#if 0
-		rc = funcs->rsa_decrypt(key->secure_key, key->secure_key_size,
-					out, outlen, in, inlen, pad_mode,
-					key->private,
-					ps_dbg_enabled(&ctx->pctx->dbg));
-#endif
-		break;
-	}
-
-	if (tmp != NULL) {
-		OPENSSL_cleanse(tmp, outsize);
-		OPENSSL_free(tmp);
-	}
-
-	if (rc != 0) {
-		put_error_op_ctx(ctx, PS_ERR_SECURE_KEY_FUNC_FAILED,
-				 "Secure key encrypt operation failed: rc: %d",
-				 rc);
-		rc = 0;
-		goto out;
-	}
-
-	rc = 1;
-
-	ps_opctx_debug(ctx, "outlen: %lu", *outlen);
-
-out:
-	if (oaep_md != NULL)
-		EVP_MD_free(oaep_md);
-	if (mgf_md != NULL)
-		EVP_MD_free(mgf_md);
-
-	return rc;
+	/* TODO pkcs11 implementation */
+	return OSSL_RV_ERR;
 }
 
 static const OSSL_DISPATCH ps_rsa_asym_cipher_functions[] = {
 	/* RSA context constructor, descructor */
 	{ OSSL_FUNC_ASYM_CIPHER_NEWCTX, (void (*)(void))ps_asym_rsa_newctx },
-	{ OSSL_FUNC_ASYM_CIPHER_FREECTX, (void (*)(void))ps_op_freectx },
+	{ OSSL_FUNC_ASYM_CIPHER_FREECTX, (void (*)(void))op_ctx_free },
 	{ OSSL_FUNC_ASYM_CIPHER_DUPCTX, (void (*)(void))ps_asym_op_dupctx },
 	/* RSA context set/get parameters */
 	{ OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS, (void (*)(void))ps_asym_op_get_ctx_params },
