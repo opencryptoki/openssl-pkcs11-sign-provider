@@ -14,433 +14,379 @@
 #include "debug.h"
 #include "ossl.h"
 
-#define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
-
-struct ps_op_ctx {
-	struct provider_ctx *pctx;
-	struct obj *key;
-
-	CK_OBJECT_HANDLE ohandle;
-	CK_SESSION_HANDLE shandle;
-
-	int type;
-
-	/* legacy */
-	const char *propq;
-	void *fwd_op_ctx; /* shadow context of default provider */
-	void (*fwd_op_ctx_free)(void *fwd_op_ctx);
-	int operation;
-	OSSL_FUNC_signature_sign_fn *sign_fn;
-	EVP_MD_CTX *mdctx;
-	EVP_MD *md;
-};
-
-static void ps_op_freectx(void *vopctx __unused)
+static int kex_newctx_fwd(struct op_ctx *opctx)
 {
+	OSSL_FUNC_keyexch_freectx_fn *fwd_freectx_fn;
+	OSSL_FUNC_keyexch_newctx_fn *fwd_newctx_fn;
+
+	fwd_newctx_fn = (OSSL_FUNC_keyexch_newctx_fn *)
+		fwd_keyexch_get_func(&opctx->pctx->fwd,
+				     OSSL_FUNC_KEYEXCH_NEWCTX,
+				     &opctx->pctx->dbg);
+	if (!fwd_newctx_fn) {
+		put_error_pctx(opctx->pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+			       "no fwd newctx_fn");
+		return OSSL_RV_ERR;
+	}
+
+	fwd_freectx_fn = (OSSL_FUNC_keyexch_freectx_fn *)
+		fwd_keyexch_get_func(&opctx->pctx->fwd,
+				     OSSL_FUNC_KEYEXCH_FREECTX,
+				     &opctx->pctx->dbg);
+	if (!fwd_freectx_fn) {
+		put_error_pctx(opctx->pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+			       "no fwd freectx_fn");
+		return OSSL_RV_ERR;
+	}
+
+	opctx->fwd_op_ctx = fwd_newctx_fn(opctx->pctx->fwd.ctx);
+	if (!opctx->fwd_op_ctx) {
+		put_error_pctx(opctx->pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+			       "fwd_newctx_fn failed");
+		return OSSL_RV_ERR;
+	}
+	opctx->fwd_op_ctx_free = fwd_freectx_fn;
+
+	return OSSL_RV_OK;
 }
 
-static struct ps_op_ctx *ps_op_dupctx(struct ps_op_ctx *opctx __unused)
-{
-	return NULL;
-}
+#define DISP_KEX_FN(tname, name) DECL_DISPATCH_FUNC(keyexch, tname, name)
+DISP_KEX_FN(newctx, ps_kex_ec_newctx);
+DISP_KEX_FN(dupctx, ps_kex_ec_dupctx);
+DISP_KEX_FN(init, ps_kex_ec_init);
+DISP_KEX_FN(set_peer, ps_kex_ec_set_peer);
+DISP_KEX_FN(derive, ps_kex_ec_derive);
+DISP_KEX_FN(set_ctx_params, ps_kex_ec_set_ctx_params);
+DISP_KEX_FN(get_ctx_params, ps_kex_ec_get_ctx_params);
+DISP_KEX_FN(settable_ctx_params, ps_kex_ec_settable_ctx_params);
+DISP_KEX_FN(gettable_ctx_params, ps_kex_ec_gettable_ctx_params);
 
-static struct ps_op_ctx *ps_op_newctx(struct provider_ctx *pctx __unused, const char *propq __unused, int type __unused)
+static void *ps_kex_ec_newctx(void *vpctx)
 {
-	return NULL;
-}
-
-static struct ps_op_ctx *ps_op_init(struct ps_op_ctx *opctx __unused, struct obj *key __unused, int operation __unused)
-{
-	return NULL;
-}
-
-#define DISP_KEYEXCH_FN(tname, name) DECL_DISPATCH_FUNC(keyexch, tname, name)
-DISP_KEYEXCH_FN(newctx, ps_keyexch_ec_newctx);
-DISP_KEYEXCH_FN(dupctx, ps_keyexch_ec_dupctx);
-DISP_KEYEXCH_FN(init, ps_keyexch_ec_init);
-DISP_KEYEXCH_FN(set_peer, ps_keyexch_ec_set_peer);
-DISP_KEYEXCH_FN(derive, ps_keyexch_ec_derive);
-DISP_KEYEXCH_FN(set_ctx_params, ps_keyexch_ec_set_ctx_params);
-DISP_KEYEXCH_FN(get_ctx_params, ps_keyexch_ec_get_ctx_params);
-DISP_KEYEXCH_FN(settable_ctx_params, ps_keyexch_ec_settable_ctx_params);
-DISP_KEYEXCH_FN(gettable_ctx_params, ps_keyexch_ec_gettable_ctx_params);
-
-// keep
-static void *ps_keyexch_ec_newctx(void *vpctx)
-{
-	OSSL_FUNC_keyexch_freectx_fn *default_freectx_fn;
-	OSSL_FUNC_keyexch_newctx_fn *default_newctx_fn;
 	struct provider_ctx *pctx = vpctx;
-	struct ps_op_ctx *opctx;
+	struct op_ctx *opctx;
 
 	if (!pctx)
 		return NULL;
 
-	ps_dbg_debug(&pctx->dbg, "pctx: %p", pctx);
+	ps_pctx_debug(pctx, "pctx: %p", pctx);
 
-	default_newctx_fn = (OSSL_FUNC_keyexch_newctx_fn *)
-		fwd_keyexch_get_func(&pctx->fwd,
-				     OSSL_FUNC_KEYEXCH_NEWCTX,
-				     &pctx->dbg);
-	if (default_newctx_fn == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default newctx_fn");
+	opctx = op_ctx_new(pctx, NULL, EVP_PKEY_EC);
+	if (!opctx) {
+		ps_pctx_debug(pctx, "ERROR: op_ctx_new() failed");
 		return NULL;
 	}
 
-	default_freectx_fn = (OSSL_FUNC_keyexch_freectx_fn *)
-		fwd_keyexch_get_func(&pctx->fwd,
-				     OSSL_FUNC_KEYEXCH_FREECTX,
-				     &pctx->dbg);
-	if (default_freectx_fn == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default freectx_fn");
+	if (kex_newctx_fwd(opctx) != OSSL_RV_OK) {
+		ps_pctx_debug(pctx, "ERROR: kex_newctx_fwd() failed");
+		op_ctx_free(opctx);
 		return NULL;
 	}
 
-	opctx = ps_op_newctx(pctx, NULL, EVP_PKEY_EC);
-	if (opctx == NULL) {
-		ps_dbg_debug(&pctx->dbg, "ERROR: ps_op_newctx failed");
-		return NULL;
-	}
-
-	opctx->fwd_op_ctx = default_newctx_fn(pctx->fwd.ctx);
-	if (opctx->fwd_op_ctx == NULL) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			       "default_newctx_fn failed");
-		ps_op_freectx(opctx);
-		return NULL;
-	}
-	opctx->fwd_op_ctx_free = default_freectx_fn;
-
-	ps_dbg_debug(&pctx->dbg, "opctx: %p", opctx);
-
+	ps_pctx_debug(pctx, "opctx: %p", opctx);
 	return opctx;
 }
 
-// keep
-static void *ps_keyexch_ec_dupctx(void *vctx)
+static void *ps_kex_ec_dupctx(void *vctx)
 {
-	OSSL_FUNC_keyexch_dupctx_fn *default_dupctx_fn;
-	struct ps_op_ctx *ctx = vctx;
-	struct ps_op_ctx *new_ctx;
+	OSSL_FUNC_keyexch_dupctx_fn *fwd_dupctx_fn;
+	struct op_ctx *opctx = vctx;
+	struct op_ctx *opctx_new;
 
-	if (ctx == NULL)
+	if (!opctx)
 		return NULL;
 
-	ps_opctx_debug(ctx, "ctx: %p", ctx);
+	ps_opctx_debug(opctx, "opctx: %p", opctx);
 
-	default_dupctx_fn = (OSSL_FUNC_keyexch_dupctx_fn *)
-			fwd_keyexch_get_func(&ctx->pctx->fwd,
+	fwd_dupctx_fn = (OSSL_FUNC_keyexch_dupctx_fn *)
+			fwd_keyexch_get_func(&opctx->pctx->fwd,
 					OSSL_FUNC_KEYEXCH_DUPCTX,
-					&ctx->pctx->dbg);
-	if (default_dupctx_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default dupctx_fn");
+					&opctx->pctx->dbg);
+	if (!fwd_dupctx_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no fwd dupctx_fn");
 		return NULL;
 	}
 
-	new_ctx = ps_op_dupctx(ctx);
-	if (new_ctx == NULL) {
-		ps_opctx_debug(ctx, "ERROR: ps_op_dupctx failed");
+	opctx_new = op_ctx_dup(opctx);
+	if (!opctx_new) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_dup() failed");
 		return NULL;
 	}
 
-	new_ctx->fwd_op_ctx = default_dupctx_fn(ctx->fwd_op_ctx);
-	if (new_ctx->fwd_op_ctx == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_dupctx_fn failed");
-		ps_op_freectx(new_ctx);
+	opctx_new->fwd_op_ctx = fwd_dupctx_fn(opctx->fwd_op_ctx);
+	if (!opctx_new->fwd_op_ctx) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_dupctx_fn failed");
+		op_ctx_free(opctx_new);
 		return NULL;
 	}
 
-	ps_opctx_debug(ctx, "new_ctx: %p", new_ctx);
-	return new_ctx;
+	ps_opctx_debug(opctx, "opctx_new: %p", opctx_new);
+	return opctx_new;
 }
 
-// keep
-static int ps_keyexch_ec_init(void *vctx, void *vkey,
-				   const OSSL_PARAM params[])
+static int ps_kex_ec_init(void *vctx, void *vkey,
+			  const OSSL_PARAM params[])
 {
-	OSSL_FUNC_keyexch_init_fn *default_init_fn;
-	struct ps_op_ctx *ctx = vctx;
+	OSSL_FUNC_keyexch_init_fn *fwd_init_fn;
+	struct op_ctx *opctx = vctx;
 	struct obj *key = vkey;
 	const OSSL_PARAM *p;
 
-	if (ctx == NULL || key == NULL)
-		return 0;
+	if (!opctx || !key)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p key: %p", ctx, key);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(ctx, "param: %s", p->key);
+	ps_opctx_debug(opctx, "opctx: %p key: %p", opctx, key);
+	for (p = params; p && p->key; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	default_init_fn = (OSSL_FUNC_keyexch_init_fn *)
-			fwd_keyexch_get_func(&ctx->pctx->fwd,
+	if (op_ctx_init(opctx, key, EVP_PKEY_OP_DERIVE) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (key->use_pkcs11) {
+		ps_opctx_debug(opctx, "opctx: %p, not supported for key %p (pkcs11)",
+			       opctx, key);
+		return OSSL_RV_ERR;
+	}
+
+	fwd_init_fn = (OSSL_FUNC_keyexch_init_fn *)
+			fwd_keyexch_get_func(&opctx->pctx->fwd,
 					OSSL_FUNC_KEYEXCH_INIT,
-					&ctx->pctx->dbg);
-	if (default_init_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default init_fn");
-		return 0;
+					&opctx->pctx->dbg);
+	if (!fwd_init_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no fwd init_fn");
+		return OSSL_RV_ERR;
 	}
 
-	if (!ps_op_init(ctx, key, EVP_PKEY_OP_DERIVE)) {
-		ps_opctx_debug(ctx, "ERROR: ps_op_init failed");
-		return 0;
+	if (fwd_init_fn(opctx->fwd_op_ctx, key->fwd_key, params) != OSSL_RV_OK) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_init_fn failed");
+		return OSSL_RV_ERR;
 	}
 
-	if (!default_init_fn(ctx->fwd_op_ctx, key->fwd_key, params)) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_init_fn failed");
-		return 0;
-	}
-
-	return 1;
+	return OSSL_RV_OK;
 }
 
-// keep
-static int ps_keyexch_ec_set_peer(void *vctx, void *vpeerkey)
+static int ps_kex_ec_set_peer(void *vctx, void *vpeerkey)
 
 {
-	OSSL_FUNC_keyexch_set_peer_fn *default_set_peer_fn;
+	OSSL_FUNC_keyexch_set_peer_fn *fwd_set_peer_fn;
 	struct obj *peerkey = vpeerkey;
-	struct ps_op_ctx *ctx = vctx;
+	struct op_ctx *opctx = vctx;
 
-	if (ctx == NULL || peerkey == NULL)
-		return 0;
+	if (!opctx || !peerkey)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p key: %p peerkey: %p", ctx, ctx->key,
+	ps_opctx_debug(opctx, "opctx: %p key: %p peerkey: %p", opctx, opctx->key,
 			peerkey);
 
-	default_set_peer_fn = (OSSL_FUNC_keyexch_set_peer_fn *)
-			fwd_keyexch_get_func(&ctx->pctx->fwd,
-					OSSL_FUNC_KEYEXCH_SET_PEER,
-					&ctx->pctx->dbg);
-	if (default_set_peer_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default set_peer_fn");
-		return 0;
-	}
-
-	if (ctx->key == NULL || ctx->operation != EVP_PKEY_OP_DERIVE) {
-		put_error_op_ctx(ctx, PS_ERR_OPRATION_NOT_INITIALIZED,
+	if (!opctx->key || (opctx->operation != EVP_PKEY_OP_DERIVE)) {
+		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
 				 "derive operation not initialized");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	if (!default_set_peer_fn(ctx->fwd_op_ctx, peerkey->fwd_key)) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_set_peer_fn failed");
-		return 0;
+	fwd_set_peer_fn = (OSSL_FUNC_keyexch_set_peer_fn *)
+			fwd_keyexch_get_func(&opctx->pctx->fwd,
+					OSSL_FUNC_KEYEXCH_SET_PEER,
+					&opctx->pctx->dbg);
+	if (!fwd_set_peer_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no fwd set_peer_fn");
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	if (fwd_set_peer_fn(opctx->fwd_op_ctx, peerkey->fwd_key) != OSSL_RV_OK) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_set_peer_fn failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
 }
 
-// keep
-static int ps_keyexch_ec_derive(void *vctx,
-				     unsigned char *secret, size_t *secretlen,
-				     size_t outlen)
+static int ps_kex_ec_derive(void *vctx,
+			    unsigned char *secret, size_t *secretlen,
+			    size_t outlen)
 {
-	OSSL_FUNC_keyexch_derive_fn *default_derive_fn;
-	struct ps_op_ctx *ctx = vctx;
+	OSSL_FUNC_keyexch_derive_fn *fwd_derive_fn;
+	struct op_ctx *opctx = vctx;
 
-	if (ctx == NULL || secretlen == NULL)
-		return 0;
+	if (!opctx || !secretlen)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p key: %p outlen: %lu", ctx, ctx->key,
+	ps_opctx_debug(opctx, "opctx: %p key: %p outlen: %lu", opctx, opctx->key,
 			outlen);
 
-	default_derive_fn = (OSSL_FUNC_keyexch_derive_fn *)
-			fwd_keyexch_get_func(&ctx->pctx->fwd,
+	fwd_derive_fn = (OSSL_FUNC_keyexch_derive_fn *)
+			fwd_keyexch_get_func(&opctx->pctx->fwd,
 					OSSL_FUNC_KEYEXCH_DERIVE,
-					&ctx->pctx->dbg);
-	if (default_derive_fn == NULL) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default derive_fn");
-		return 0;
+					&opctx->pctx->dbg);
+	if (!fwd_derive_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no fwd derive_fn");
+		return OSSL_RV_ERR;
 	}
 
-	if (ctx->key == NULL || ctx->operation != EVP_PKEY_OP_DERIVE) {
-		put_error_op_ctx(ctx, PS_ERR_OPRATION_NOT_INITIALIZED,
+	if (!opctx->key || (opctx->operation != EVP_PKEY_OP_DERIVE)) {
+		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
 				 "derive operation not initialized");
-		return 0;
+		return OSSL_RV_ERR;
 	}
 
-	if (!default_derive_fn(ctx->fwd_op_ctx, secret, secretlen,
-			       outlen)) {
-		put_error_op_ctx(ctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_derive_fn failed");
-		return 0;
+	if (fwd_derive_fn(opctx->fwd_op_ctx,
+			  secret, secretlen, outlen) != OSSL_RV_OK) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_derive_fn failed");
+		return OSSL_RV_ERR;
 	}
 
-	ps_opctx_debug(ctx, "secretlen: %lu", *secretlen);
+	ps_opctx_debug(opctx, "secretlen: %lu", *secretlen);
 
-	return 1;
+	return OSSL_RV_OK;
 }
 
-// keep
-static int ps_keyexch_ec_set_ctx_params(void *vctx,
-					     const OSSL_PARAM params[])
+static int ps_kex_ec_set_ctx_params(void *vctx,
+				    const OSSL_PARAM params[])
 {
-	OSSL_FUNC_keyexch_set_ctx_params_fn *default_set_params_fn;
-	struct ps_op_ctx *ctx = vctx;
+	OSSL_FUNC_keyexch_set_ctx_params_fn *fwd_set_params_fn;
+	struct op_ctx *opctx = vctx;
 	const OSSL_PARAM *p;
 
-	if (ctx == NULL)
-		return 0;
+	if (!opctx)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p", ctx);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(ctx, "param: %s", p->key);
+	ps_opctx_debug(opctx, "opctx: %p", opctx);
+	for (p = params; p && p->key; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	default_set_params_fn = (OSSL_FUNC_keyexch_set_ctx_params_fn *)
-			fwd_keyexch_get_func(&ctx->pctx->fwd,
-				OSSL_FUNC_KEYEXCH_SET_CTX_PARAMS,
-				&ctx->pctx->dbg);
+	fwd_set_params_fn = (OSSL_FUNC_keyexch_set_ctx_params_fn *)
+		fwd_keyexch_get_func(&opctx->pctx->fwd,
+				     OSSL_FUNC_KEYEXCH_SET_CTX_PARAMS,
+				     &opctx->pctx->dbg);
 
-	/* default_set_params_fn is optional */
-	if (default_set_params_fn != NULL) {
-		if (!default_set_params_fn(ctx->fwd_op_ctx, params)) {
-			put_error_op_ctx(ctx,
-					 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-					 "default_set_params_fn failed");
-			return 0;
-		}
+	/* fwd_set_params_fn is optional */
+	if ((fwd_set_params_fn) &&
+	    (fwd_set_params_fn(opctx->fwd_op_ctx, params) != OSSL_RV_OK)) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_set_params_fn failed");
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	return OSSL_RV_OK;
 
 }
 
-// keep
-static const OSSL_PARAM *ps_keyexch_ec_settable_ctx_params(void *vctx,
+static const OSSL_PARAM *ps_kex_ec_settable_ctx_params(void *vctx,
 								void *vprovctx)
 {
 	OSSL_FUNC_keyexch_settable_ctx_params_fn
-						*default_settable_params_fn;
+						*fwd_settable_params_fn;
 	struct provider_ctx *pctx = vprovctx;
 	const OSSL_PARAM *params = NULL, *p;
-	struct ps_op_ctx *opctx = vctx;
+	struct op_ctx *opctx = vctx;
 
-	if (opctx == NULL || pctx == NULL)
+	if (!opctx || !pctx)
 		return NULL;
 
-	default_settable_params_fn =
-		(OSSL_FUNC_keyexch_settable_ctx_params_fn *)
-			fwd_keyexch_get_func(&pctx->fwd,
-				OSSL_FUNC_KEYEXCH_SETTABLE_CTX_PARAMS,
-				&pctx->dbg);
+	fwd_settable_params_fn = (OSSL_FUNC_keyexch_settable_ctx_params_fn *)
+		fwd_keyexch_get_func(&pctx->fwd,
+				     OSSL_FUNC_KEYEXCH_SETTABLE_CTX_PARAMS,
+				     &pctx->dbg);
 
-	/* default_settable_params_fn is optional */
-	if (default_settable_params_fn != NULL)
-		params = default_settable_params_fn(opctx->fwd_op_ctx,
+	/* fwd_settable_params_fn is optional */
+	if (fwd_settable_params_fn)
+		params = fwd_settable_params_fn(opctx->fwd_op_ctx,
 						    pctx->fwd.ctx);
 
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_dbg_debug(&pctx->dbg, "param: %s", p->key);
+	for (p = params; p && p->key; p++)
+		ps_pctx_debug(pctx, "param: %s", p->key);
 
 	return params;
 }
 
-// keep
-static int ps_keyexch_ec_get_ctx_params(void *vctx, OSSL_PARAM params[])
+static int ps_kex_ec_get_ctx_params(void *vctx, OSSL_PARAM params[])
 {
-	OSSL_FUNC_keyexch_get_ctx_params_fn *default_get_params_fn;
-	struct ps_op_ctx *ctx = vctx;
+	OSSL_FUNC_keyexch_get_ctx_params_fn *fwd_get_params_fn;
+	struct op_ctx *opctx = vctx;
 	const OSSL_PARAM *p;
 
-	if (ctx == NULL)
-		return 0;
+	if (!opctx)
+		return OSSL_RV_ERR;
 
-	ps_opctx_debug(ctx, "ctx: %p", ctx);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(ctx, "param: %s", p->key);
+	ps_opctx_debug(opctx, "opctx: %p", opctx);
+	for (p = params; p && p->key; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	default_get_params_fn = (OSSL_FUNC_keyexch_get_ctx_params_fn *)
-			fwd_keyexch_get_func(&ctx->pctx->fwd,
+	fwd_get_params_fn = (OSSL_FUNC_keyexch_get_ctx_params_fn *)
+			fwd_keyexch_get_func(&opctx->pctx->fwd,
 					OSSL_FUNC_KEYEXCH_GET_CTX_PARAMS,
-					&ctx->pctx->dbg);
+					&opctx->pctx->dbg);
 
-	/* default_get_params_fn is optional */
-	if (default_get_params_fn != NULL) {
-		if (!default_get_params_fn(ctx->fwd_op_ctx, params)) {
-			put_error_op_ctx(ctx,
-					 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-					 "default_get_params_fn failed");
-			return 0;
-		}
+	/* fwd_get_params_fn is optional */
+	if ((fwd_get_params_fn) &&
+	    (fwd_get_params_fn(opctx->fwd_op_ctx, params) != OSSL_RV_OK)) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_get_params_fn failed");
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	return OSSL_RV_OK;
 }
 
-// keep
-static const OSSL_PARAM *ps_keyexch_ec_gettable_ctx_params(void *vctx,
-								void *vprovctx)
+static const OSSL_PARAM *ps_kex_ec_gettable_ctx_params(void *vctx,
+						       void *vprovctx)
 {
-	OSSL_FUNC_keyexch_gettable_ctx_params_fn
-						*fwd_gettable_params_fn;
+	OSSL_FUNC_keyexch_gettable_ctx_params_fn *fwd_gettable_params_fn;
 	struct provider_ctx *pctx = vprovctx;
 	const OSSL_PARAM *params = NULL, *p;
-	struct ps_op_ctx *opctx = vctx;
+	struct op_ctx *opctx = vctx;
 
-	if (opctx == NULL || pctx == NULL)
+	if (!opctx || !pctx)
 		return NULL;
 
-	fwd_gettable_params_fn =
-		(OSSL_FUNC_keyexch_gettable_ctx_params_fn *)
-			fwd_keyexch_get_func(&pctx->fwd,
-				OSSL_FUNC_KEYEXCH_GETTABLE_CTX_PARAMS,
-				&pctx->dbg);
+	fwd_gettable_params_fn = (OSSL_FUNC_keyexch_gettable_ctx_params_fn *)
+		fwd_keyexch_get_func(&pctx->fwd,
+				     OSSL_FUNC_KEYEXCH_GETTABLE_CTX_PARAMS,
+				     &pctx->dbg);
 
-	/* default_settable_params_fn is optional */
-	if (fwd_gettable_params_fn != NULL)
+	/* fwd_settable_params_fn is optional */
+	if (fwd_gettable_params_fn)
 		params = fwd_gettable_params_fn(opctx->fwd_op_ctx,
 						    pctx->fwd.ctx);
 
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_dbg_debug(&pctx->dbg, "param: %s", p->key);
+	for (p = params; p && p->key; p++)
+		ps_pctx_debug(pctx, "param: %s", p->key);
 
 	return params;
 }
 
 
-static const OSSL_DISPATCH ps_ec_keyexch_functions[] = {
+static const OSSL_DISPATCH ps_kex_ec_functions[] = {
 	/* Context management */
-	{ OSSL_FUNC_KEYEXCH_NEWCTX, (void (*)(void))ps_keyexch_ec_newctx },
-	{ OSSL_FUNC_KEYEXCH_FREECTX, (void (*)(void))ps_op_freectx },
-	{ OSSL_FUNC_KEYEXCH_DUPCTX, (void (*)(void))ps_keyexch_ec_dupctx },
+	{ OSSL_FUNC_KEYEXCH_NEWCTX, (void (*)(void))ps_kex_ec_newctx },
+	{ OSSL_FUNC_KEYEXCH_FREECTX, (void (*)(void))op_ctx_free },
+	{ OSSL_FUNC_KEYEXCH_DUPCTX, (void (*)(void))ps_kex_ec_dupctx },
 
 	/* Shared secret derivation */
-	{ OSSL_FUNC_KEYEXCH_INIT, (void (*)(void))ps_keyexch_ec_init },
-	{ OSSL_FUNC_KEYEXCH_SET_PEER,
-		(void (*)(void))ps_keyexch_ec_set_peer },
-	{ OSSL_FUNC_KEYEXCH_DERIVE, (void (*)(void))ps_keyexch_ec_derive },
+	{ OSSL_FUNC_KEYEXCH_INIT, (void (*)(void))ps_kex_ec_init },
+	{ OSSL_FUNC_KEYEXCH_SET_PEER, (void (*)(void))ps_kex_ec_set_peer },
+	{ OSSL_FUNC_KEYEXCH_DERIVE, (void (*)(void))ps_kex_ec_derive },
 
 	/* Key Exchange parameters */
-	{ OSSL_FUNC_KEYEXCH_SET_CTX_PARAMS,
-		(void (*)(void))ps_keyexch_ec_set_ctx_params },
-	{ OSSL_FUNC_KEYEXCH_SETTABLE_CTX_PARAMS,
-		(void (*)(void))ps_keyexch_ec_settable_ctx_params },
-	{ OSSL_FUNC_KEYEXCH_GET_CTX_PARAMS,
-			(void (*)(void))ps_keyexch_ec_get_ctx_params },
-	{ OSSL_FUNC_KEYEXCH_GETTABLE_CTX_PARAMS,
-		(void (*)(void))ps_keyexch_ec_gettable_ctx_params },
+	{ OSSL_FUNC_KEYEXCH_SET_CTX_PARAMS, (void (*)(void))ps_kex_ec_set_ctx_params },
+	{ OSSL_FUNC_KEYEXCH_SETTABLE_CTX_PARAMS, (void (*)(void))ps_kex_ec_settable_ctx_params },
+	{ OSSL_FUNC_KEYEXCH_GET_CTX_PARAMS, (void (*)(void))ps_kex_ec_get_ctx_params },
+	{ OSSL_FUNC_KEYEXCH_GETTABLE_CTX_PARAMS, (void (*)(void))ps_kex_ec_gettable_ctx_params },
 
 	{ 0, NULL }
 };
 
-/*
- * Although ECDH key derivation is not supported for secure keys (would result
- * in a secure symmetric key, which OpenSSL can't handle), the provider still
- * must implement the ECDH key exchange functions and proxy them all to the
- * default provider. OpenSSL common code requires that the key management
- * provider and the key exchange provider for a derive operation is the same.
- * So for clear EC keys created with this provider, we do support the ECDH
- * operation by forwarding it to the configured provider.
- */
 const OSSL_ALGORITHM ps_keyexch[] = {
-	{ "ECDH", "provider="PS_PROV_NAME, ps_ec_keyexch_functions, NULL },
+	{ "ECDH", "provider="PS_PROV_NAME, ps_kex_ec_functions, NULL },
 	{ NULL, NULL, NULL, NULL }
 };
