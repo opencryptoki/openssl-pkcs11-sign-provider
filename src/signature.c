@@ -133,9 +133,34 @@ err:
 	return NULL;
 }
 
-static void *ps_signature_op_dupctx(void *vopctx)
+static void *ps_signature_op_dupctx_fwd(struct op_ctx *opctx)
 {
 	OSSL_FUNC_signature_dupctx_fn *fwd_dupctx_fn;
+	void *fwd_op_ctx_new = NULL;
+
+	fwd_dupctx_fn = (OSSL_FUNC_signature_dupctx_fn *)
+		fwd_sign_get_func(&opctx->pctx->fwd,
+				  opctx->type, OSSL_FUNC_SIGNATURE_DUPCTX,
+				  &opctx->pctx->dbg);
+
+	if (!fwd_dupctx_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no default dupctx_fn");
+		goto out;
+	}
+
+	fwd_op_ctx_new = fwd_dupctx_fn(opctx->fwd_op_ctx);
+	if (!fwd_op_ctx_new) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_dupctx_fn failed");
+	}
+
+out:
+	return fwd_op_ctx_new;
+}
+
+static void *ps_signature_op_dupctx(void *vopctx)
+{
 	struct op_ctx *opctx = vopctx;
 	struct op_ctx *opctx_new;
 
@@ -151,22 +176,10 @@ static void *ps_signature_op_dupctx(void *vopctx)
 	}
 	opctx_new->mech = opctx->mech;
 
-	fwd_dupctx_fn = (OSSL_FUNC_signature_dupctx_fn *)
-		fwd_sign_get_func(&opctx->pctx->fwd,
-				  opctx->type, OSSL_FUNC_SIGNATURE_DUPCTX,
-				  &opctx->pctx->dbg);
-	if (!fwd_dupctx_fn) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default dupctx_fn");
-		goto err;
-	}
-
-	opctx_new->fwd_op_ctx = fwd_dupctx_fn(opctx->fwd_op_ctx);
+	opctx_new->fwd_op_ctx = ps_signature_op_dupctx_fwd(opctx);
 	if (!opctx_new->fwd_op_ctx) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "fwd_dupctx_fn failed");
-		op_ctx_free(opctx_new);
-		return NULL;
+		ps_opctx_debug(opctx, "ERROR: unable to dup fwd_op_ctx");
+		goto err;
 	}
 	opctx_new->fwd_op_ctx_free = opctx->fwd_op_ctx_free;
 
@@ -175,14 +188,12 @@ static void *ps_signature_op_dupctx(void *vopctx)
 		if (!opctx_new->mdctx) {
 			put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 					 "EVP_MD_CTX_new failed");
-			op_ctx_free(opctx_new);
-			return NULL;
+			goto err;
 		}
 		if (EVP_MD_CTX_copy(opctx_new->mdctx, opctx->mdctx) != OSSL_RV_OK) {
 			put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 					 "EVP_MD_CTX_copy failed");
-			op_ctx_free(opctx_new);
-			return NULL;
+			goto err;
 		}
 	}
 
@@ -190,8 +201,7 @@ static void *ps_signature_op_dupctx(void *vopctx)
 	    (EVP_MD_up_ref(opctx->md) != OSSL_RV_OK)) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 				 "EVP_MD_up_ref failed");
-		op_ctx_free(opctx_new);
-		return NULL;
+		goto err;
 	}
 
 	if ((opctx->hobject != CK_INVALID_HANDLE) &&
@@ -580,43 +590,12 @@ static int ps_signature_op_get_pss_saltlen(struct op_ctx *opctx,
 	return salt_len;
 }
 
-static int ps_signature_op_sign_init(void *vopctx, void *vkey,
-				     const OSSL_PARAM params[],
-				     const CK_MECHANISM_PTR mech)
+static int ps_signature_op_sign_init_fwd(struct op_ctx *opctx,
+					 struct obj *key,
+					 const OSSL_PARAM params[])
 {
 	OSSL_FUNC_signature_sign_init_fn *fwd_sign_init_fn;
-	struct op_ctx *opctx = vopctx;
-	struct obj *key = vkey;
-	const OSSL_PARAM *p;
 
-	if (!opctx || !key )
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p, mech: %p",
-		       opctx, key, mech);
-
-	for (p = params; p && p->key; p++)
-		ps_opctx_debug(opctx, "param: %s", p->key);
-
-
-	if (op_ctx_init(opctx, key, EVP_PKEY_OP_SIGN) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
-		return OSSL_RV_ERR;
-	}
-
-	if (key->fwd_key)
-		goto fwd;
-
-	opctx->mech = *mech;
-
-	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
-		return OSSL_RV_ERR;
-	}
-
-	return OSSL_RV_OK;
-
-fwd:
 	fwd_sign_init_fn = (OSSL_FUNC_signature_sign_init_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
 				  OSSL_FUNC_SIGNATURE_SIGN_INIT,
@@ -636,12 +615,75 @@ fwd:
 	return OSSL_RV_OK;
 }
 
+static int ps_signature_op_sign_init(void *vopctx, void *vkey,
+				     const OSSL_PARAM params[],
+				     const CK_MECHANISM_PTR mech)
+{
+	struct op_ctx *opctx = vopctx;
+	struct obj *key = vkey;
+	const OSSL_PARAM *p;
+
+	if (!opctx || !key )
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p, mech: %p",
+		       opctx, key, mech);
+
+	for (p = params; p && p->key; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
+
+	if (op_ctx_init(opctx, key, EVP_PKEY_OP_SIGN) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (!key->use_pkcs11)
+		return ps_signature_op_sign_init_fwd(opctx, key, params);
+
+	opctx->mech = *mech;
+
+	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
+}
+
+static int ps_signature_op_sign_fwd(struct op_ctx *opctx,
+				    unsigned char *sig, size_t *siglen,
+				    size_t sigsize,
+				    const unsigned char *tbs, size_t tbslen)
+{
+	OSSL_FUNC_signature_sign_fn *fwd_sign_fn;
+
+	fwd_sign_fn =
+		(OSSL_FUNC_signature_sign_fn *)
+		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
+				  OSSL_FUNC_SIGNATURE_SIGN,
+				  &opctx->pctx->dbg);
+	if (!fwd_sign_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no fwd sign_fn");
+		return OSSL_RV_ERR;
+	}
+
+	if (fwd_sign_fn(opctx->fwd_op_ctx, sig, siglen, sigsize,
+			tbs, tbslen) != OSSL_RV_OK) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_sign_fn failed");
+		return OSSL_RV_ERR;
+	}
+
+	ps_opctx_debug(opctx, "siglen: %lu", *siglen);
+	return OSSL_RV_OK;
+}
+
 static int ps_signature_op_sign(void *vopctx,
 				unsigned char *sig, size_t *siglen,
 				size_t sigsize,
 				const unsigned char *tbs, size_t tbslen)
 {
-	OSSL_FUNC_signature_sign_fn *fwd_sign_fn;
 	struct op_ctx *opctx = vopctx;
 	size_t raw_siglen;
 
@@ -657,8 +699,8 @@ static int ps_signature_op_sign(void *vopctx,
 		return OSSL_RV_ERR;
 	}
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_sign_fwd(opctx, sig, siglen, sigsize, tbs, tbslen);
 
 	if (!sig)
 		return op_ctx_signature_size(opctx, siglen);
@@ -693,58 +735,14 @@ static int ps_signature_op_sign(void *vopctx,
 			  sig, *siglen);
 
 	return OSSL_RV_OK;
-
-fwd:
-	fwd_sign_fn =
-		(OSSL_FUNC_signature_sign_fn *)
-		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
-				  OSSL_FUNC_SIGNATURE_SIGN,
-				  &opctx->pctx->dbg);
-	if (!fwd_sign_fn) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no fwd sign_fn");
-		return OSSL_RV_ERR;
-	}
-
-	if (fwd_sign_fn(opctx->fwd_op_ctx, sig, siglen, sigsize,
-			tbs, tbslen) != OSSL_RV_OK) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "fwd_sign_fn failed");
-		return OSSL_RV_ERR;
-	}
-
-	ps_opctx_debug(opctx, "siglen: %lu", *siglen);
-	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify_init(void *vopctx, void *vkey,
-				       const OSSL_PARAM params[])
+static int ps_signature_op_verify_init_fwd(struct op_ctx *opctx,
+					   struct obj *key,
+					   const OSSL_PARAM params[])
 {
 	OSSL_FUNC_signature_verify_init_fn *fwd_verify_init_fn;
-	struct op_ctx *opctx = vopctx;
-	struct obj *key = vkey;
-	const OSSL_PARAM *p;
 
-	if (!opctx || !key)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p",
-		       opctx, key);
-	for (p = params; p && p->key; p++)
-		ps_opctx_debug(opctx, "param: %s", p->key);
-
-	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY)) {
-		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
-		return OSSL_RV_ERR;
-	}
-
-	if (opctx->key->fwd_key)
-		goto fwd;
-
-	/* TODO implementation for pkcs11 */
-	return OSSL_RV_ERR;
-
-fwd:
 	fwd_verify_init_fn = (OSSL_FUNC_signature_verify_init_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
 				  OSSL_FUNC_SIGNATURE_VERIFY_INIT,
@@ -766,11 +764,9 @@ fwd:
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify_recover_init(void *vopctx, void *vkey,
-					       const OSSL_PARAM params[])
+static int ps_signature_op_verify_init(void *vopctx, void *vkey,
+				       const OSSL_PARAM params[])
 {
-	OSSL_FUNC_signature_verify_recover_init_fn
-					*fwd_verify_recover_init_fn;
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
 	const OSSL_PARAM *p;
@@ -778,22 +774,31 @@ static int ps_signature_op_verify_recover_init(void *vopctx, void *vkey,
 	if (!opctx || !key)
 		return OSSL_RV_ERR;
 
-	ps_opctx_debug(opctx, "opctx: %p key: %p", opctx, key);
+	ps_opctx_debug(opctx, "opctx: %p key: %p",
+		       opctx, key);
 	for (p = params; p && p->key; p++)
 		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFYRECOVER)) {
+	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY)) {
 		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
 		return OSSL_RV_ERR;
 	}
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!key->use_pkcs11)
+		return ps_signature_op_verify_init_fwd(opctx, key, params);
 
 	/* TODO implementation for pkcs11 */
 	return OSSL_RV_ERR;
 
-fwd:
+}
+
+static int ps_signature_op_verify_recover_init_fwd(struct op_ctx *opctx,
+						   struct obj *key,
+						   const OSSL_PARAM params[])
+{
+	OSSL_FUNC_signature_verify_recover_init_fn
+					*fwd_verify_recover_init_fn;
+
 	fwd_verify_recover_init_fn =
 		(OSSL_FUNC_signature_verify_recover_init_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
@@ -816,26 +821,39 @@ fwd:
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify(void *vopctx,
-				  const unsigned char *sig, size_t siglen,
-				  const unsigned char *tbs, size_t tbslen)
+static int ps_signature_op_verify_recover_init(void *vopctx, void *vkey,
+					       const OSSL_PARAM params[])
 {
-	OSSL_FUNC_signature_verify_fn *fwd_verify_fn;
 	struct op_ctx *opctx = vopctx;
+	struct obj *key = vkey;
+	const OSSL_PARAM *p;
 
-	if (!opctx || !tbs || !sig)
+	if (!opctx || !key)
 		return OSSL_RV_ERR;
 
-	ps_opctx_debug(opctx, "opctx: %p key: %p tbslen: %lu siglen: %lu",
-			opctx, opctx->key, tbslen, siglen);
+	ps_opctx_debug(opctx, "opctx: %p key: %p", opctx, key);
+	for (p = params; p && p->key; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFYRECOVER)) {
+		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_verify_recover_init_fwd(opctx, key,
+							       params);
 
 	/* TODO implementation for pkcs11 */
 	return OSSL_RV_ERR;
+}
 
-fwd:
+static int ps_signature_op_verify_fwd(struct op_ctx *opctx,
+				      const unsigned char *sig, size_t siglen,
+				      const unsigned char *tbs, size_t tbslen)
+{
+	OSSL_FUNC_signature_verify_fn *fwd_verify_fn;
+
 	fwd_verify_fn = (OSSL_FUNC_signature_verify_fn *)
 			fwd_sign_get_func(&opctx->pctx->fwd,
 				opctx->type, OSSL_FUNC_SIGNATURE_VERIFY,
@@ -846,7 +864,7 @@ fwd:
 		return OSSL_RV_ERR;
 	}
 
-	if (!fwd_verify_fn(opctx->fwd_op_ctx, sig, siglen, tbs, tbslen)) {
+	if (fwd_verify_fn(opctx->fwd_op_ctx, sig, siglen, tbs, tbslen) != OSSL_RV_OK) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 				 "fwd_verify_fn failed");
 		return OSSL_RV_ERR;
@@ -855,28 +873,33 @@ fwd:
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify_recover(void *vopctx,
-					  unsigned char *rout, size_t *routlen,
-					  size_t routsize,
-					  const unsigned char *sig,
-					  size_t siglen)
+static int ps_signature_op_verify(void *vopctx,
+				  const unsigned char *sig, size_t siglen,
+				  const unsigned char *tbs, size_t tbslen)
 {
-	OSSL_FUNC_signature_verify_recover_fn *fwd_verify_recover_fn;
 	struct op_ctx *opctx = vopctx;
 
-	if (!opctx || !routlen || !sig)
+	if (!opctx || !tbs || !sig)
 		return OSSL_RV_ERR;
 
-	ps_opctx_debug(opctx, "opctx: %p key: %p routsize: %lu siglen: %lu",
-		       opctx, opctx->key, routsize, siglen);
+	ps_opctx_debug(opctx, "opctx: %p key: %p tbslen: %lu siglen: %lu",
+			opctx, opctx->key, tbslen, siglen);
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_verify_fwd(opctx, sig, siglen, tbs, tbslen);
 
 	/* TODO implementation for pkcs11 */
 	return OSSL_RV_ERR;
+}
 
-fwd:
+static int ps_signature_op_verify_recover_fwd(struct op_ctx *opctx,
+					      unsigned char *rout, size_t *routlen,
+					      size_t routsize,
+					      const unsigned char *sig,
+					      size_t siglen)
+{
+	OSSL_FUNC_signature_verify_recover_fn *fwd_verify_recover_fn;
+
 	fwd_verify_recover_fn =
 		(OSSL_FUNC_signature_verify_recover_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
@@ -900,13 +923,62 @@ fwd:
 	return OSSL_RV_OK;
 }
 
+static int ps_signature_op_verify_recover(void *vopctx,
+					  unsigned char *rout, size_t *routlen,
+					  size_t routsize,
+					  const unsigned char *sig,
+					  size_t siglen)
+{
+	struct op_ctx *opctx = vopctx;
+
+	if (!opctx || !routlen || !sig)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p routsize: %lu siglen: %lu",
+		       opctx, opctx->key, routsize, siglen);
+
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_verify_recover_fwd(opctx, rout, routlen,
+							  routsize, sig, siglen);
+
+	/* TODO implementation for pkcs11 */
+	return OSSL_RV_ERR;
+}
+
+static int ps_signature_op_digest_sign_init_fwd(struct op_ctx *opctx,
+						const char *mdname,
+						struct obj *key,
+						const OSSL_PARAM params[])
+{
+	OSSL_FUNC_signature_digest_sign_init_fn *fwd_digest_sign_init_fn;
+
+	fwd_digest_sign_init_fn = (OSSL_FUNC_signature_digest_sign_init_fn *)
+		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
+				  OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT,
+				  &opctx->pctx->dbg);
+	if (fwd_digest_sign_init_fn == NULL) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no default digest_sign_init_fn");
+		return 0;
+	}
+
+	if (!fwd_digest_sign_init_fn(opctx->fwd_op_ctx, mdname,
+					 key->fwd_key, params)) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_digest_sign_init_fn failed");
+		return 0;
+	}
+
+	return OSSL_RV_OK;
+
+}
+
 static int ps_signature_op_digest_sign_init(struct op_ctx *opctx,
 					    const char *mdname,
 					    struct obj *key,
 					    const OSSL_PARAM params[],
 					    const CK_MECHANISM_PTR mech)
 {
-	OSSL_FUNC_signature_digest_sign_init_fn *fwd_digest_sign_init_fn;
 	const OSSL_PARAM *p;
 
 	if (!opctx || !key)
@@ -924,8 +996,9 @@ static int ps_signature_op_digest_sign_init(struct op_ctx *opctx,
 		return 0;
 	}
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_digest_sign_init_fwd(opctx, mdname,
+							    key, params);
 
 	opctx->mech = *mech;
 
@@ -966,60 +1039,14 @@ static int ps_signature_op_digest_sign_init(struct op_ctx *opctx,
 	}
 
 	return OSSL_RV_OK;
-
-fwd:
-	fwd_digest_sign_init_fn = (OSSL_FUNC_signature_digest_sign_init_fn *)
-		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
-				  OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT,
-				  &opctx->pctx->dbg);
-	if (fwd_digest_sign_init_fn == NULL) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default digest_sign_init_fn");
-		return 0;
-	}
-
-	if (!fwd_digest_sign_init_fn(opctx->fwd_op_ctx, mdname,
-					 key->fwd_key, params)) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "fwd_digest_sign_init_fn failed");
-		return 0;
-	}
-
-	return OSSL_RV_OK;
-
 }
 
-static int ps_signature_op_digest_sign_update(void *vctx,
-					      const unsigned char *data,
-					      size_t datalen)
+static int ps_signature_op_digest_sign_update_fwd(struct op_ctx *opctx,
+						  const unsigned char *data,
+						  size_t datalen)
 {
 	OSSL_FUNC_signature_digest_sign_update_fn *fwd_digest_sign_update_fn;
-	struct op_ctx *opctx = vctx;
 
-	if (opctx == NULL)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p datalen: %lu", opctx,
-		       opctx->key, datalen);
-
-	if (opctx->key->fwd_key)
-		goto fwd;
-
-	if (!opctx->mdctx) {
-		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
-				 "digest sign operation not initialized");
-		return OSSL_RV_ERR;
-	}
-
-	if (EVP_DigestUpdate(opctx->mdctx, data, datalen) != OSSL_RV_OK) {
-		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
-				 "ERROR: EVP_DigestUpdate() failed");
-		return OSSL_RV_ERR;
-	}
-
-	return OSSL_RV_OK;
-
-fwd:
 	fwd_digest_sign_update_fn = (OSSL_FUNC_signature_digest_sign_update_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd,
 				  opctx->type,
@@ -1042,11 +1069,68 @@ fwd:
 	return OSSL_RV_OK;
 }
 
+static int ps_signature_op_digest_sign_update(void *vctx,
+					      const unsigned char *data,
+					      size_t datalen)
+{
+	struct op_ctx *opctx = vctx;
+
+	if (opctx == NULL)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p datalen: %lu", opctx,
+		       opctx->key, datalen);
+
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_digest_sign_update_fwd(opctx, data, datalen);
+
+	if (!opctx->mdctx) {
+		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
+				 "digest sign operation not initialized");
+		return OSSL_RV_ERR;
+	}
+
+	if (EVP_DigestUpdate(opctx->mdctx, data, datalen) != OSSL_RV_OK) {
+		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
+				 "ERROR: EVP_DigestUpdate() failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
+}
+
+static int ps_signature_op_digest_sign_final_fwd(struct op_ctx *opctx,
+						 unsigned char *sig, size_t *siglen,
+						 size_t sigsize)
+{
+	OSSL_FUNC_signature_digest_sign_final_fn *fwd_digest_sign_final_fn;
+
+	fwd_digest_sign_final_fn =
+		(OSSL_FUNC_signature_digest_sign_final_fn *)
+		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
+				  OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL,
+				  &opctx->pctx->dbg);
+	if (!fwd_digest_sign_final_fn) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+				 "no default digest_sign_final_fn");
+		return OSSL_RV_ERR;
+	}
+
+	if (fwd_digest_sign_final_fn(opctx->fwd_op_ctx, sig, siglen,
+					 sigsize) != OSSL_RV_OK) {
+		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+				 "fwd_digest_sign_final_fn failed");
+		return OSSL_RV_ERR;
+	}
+
+	ps_opctx_debug(opctx, "siglen: %lu", *siglen);
+	return OSSL_RV_OK;
+}
+
 static int ps_signature_op_digest_sign_final(void *vopctx,
 					     unsigned char *sig, size_t *siglen,
 					     size_t sigsize)
 {
-	OSSL_FUNC_signature_digest_sign_final_fn *fwd_digest_sign_final_fn;
 	unsigned char digest[EVP_MAX_MD_SIZE];
 	struct op_ctx *opctx = vopctx;
 	size_t raw_siglen;
@@ -1064,8 +1148,9 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 		return OSSL_RV_ERR;
 	}
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_digest_sign_final_fwd(opctx, sig,
+							     siglen, sigsize);
 
 	if (!opctx->mdctx) {
 		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
@@ -1117,27 +1202,32 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 			  sig, *siglen);
 
 	return OSSL_RV_OK;
+}
 
-fwd:
-	fwd_digest_sign_final_fn =
-		(OSSL_FUNC_signature_digest_sign_final_fn *)
+static int ps_signature_op_digest_verify_init_fwd(struct op_ctx *opctx,
+						  const char *mdname,
+						  void *fwd_key,
+						  const OSSL_PARAM params[])
+{
+	OSSL_FUNC_signature_digest_verify_init_fn *fwd_digest_verify_init_fn;
+
+	fwd_digest_verify_init_fn = (OSSL_FUNC_signature_digest_verify_init_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
-				  OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL,
+				  OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT,
 				  &opctx->pctx->dbg);
-	if (!fwd_digest_sign_final_fn) {
+	if (fwd_digest_verify_init_fn == NULL) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default digest_sign_final_fn");
+				 "no fwd digest_verify_init_fn");
 		return OSSL_RV_ERR;
 	}
 
-	if (fwd_digest_sign_final_fn(opctx->fwd_op_ctx, sig, siglen,
-					 sigsize) != OSSL_RV_OK) {
+	if (!fwd_digest_verify_init_fn(opctx->fwd_op_ctx, mdname,
+					 fwd_key, params)) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "fwd_digest_sign_final_fn failed");
+				 "fwd_digest_verify_init_fn failed");
 		return OSSL_RV_ERR;
 	}
 
-	ps_opctx_debug(opctx, "siglen: %lu", *siglen);
 	return OSSL_RV_OK;
 }
 
@@ -1146,8 +1236,6 @@ static int ps_signature_op_digest_verify_init(void *vctx,
 					      void *vkey,
 					      const OSSL_PARAM params[])
 {
-	OSSL_FUNC_signature_digest_verify_init_fn
-					*default_digest_verify_init_fn;
 	struct op_ctx *opctx = vctx;
 	struct obj *key = vkey;
 	const OSSL_PARAM *p;
@@ -1160,34 +1248,39 @@ static int ps_signature_op_digest_verify_init(void *vctx,
 	for (p = params; p != NULL && p->key != NULL; p++)
 		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_digest_verify_init_fwd(opctx, mdname, opctx->key->fwd_key, params);
 
 	/* not supported for pkcs11 */
 	return OSSL_RV_ERR;
+}
 
-fwd:
-	default_digest_verify_init_fn =
-			(OSSL_FUNC_signature_digest_verify_init_fn *)
-				fwd_sign_get_func(&opctx->pctx->fwd,
-					opctx->type,
-					OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT,
-					&opctx->pctx->dbg);
-	if (default_digest_verify_init_fn == NULL) {
+static int ps_signature_op_digest_verify_update_fwd(struct op_ctx *opctx,
+						    const unsigned char *data,
+						    size_t datalen)
+{
+	OSSL_FUNC_signature_digest_verify_update_fn *fwd_digest_verify_update_fn;
+
+	fwd_digest_verify_update_fn =
+		(OSSL_FUNC_signature_digest_verify_update_fn *)
+			fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
+				OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE,
+				&opctx->pctx->dbg);
+	if (fwd_digest_verify_update_fn == NULL) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default digest_verify_init_fn");
+				 "no default digest_verify_update_fn");
 		return OSSL_RV_ERR;
 	}
 
-	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY)) {
-		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
-		return OSSL_RV_ERR;
-	}
-
-	if (!default_digest_verify_init_fn(opctx->fwd_op_ctx, mdname,
-					 key->fwd_key, params)) {
+	if (fwd_digest_verify_update_fn(opctx->fwd_op_ctx,
+					data, datalen) != OSSL_RV_OK) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_digest_verify_init_fn failed");
+				 "default_digest_verify_update_fn failed");
 		return OSSL_RV_ERR;
 	}
 
@@ -1198,8 +1291,6 @@ static int ps_signature_op_digest_verify_update(void *vctx,
 						const unsigned char *data,
 						size_t datalen)
 {
-	OSSL_FUNC_signature_digest_verify_update_fn
-					*default_digest_verify_update_fn;
 	struct op_ctx *opctx = vctx;
 
 	if (!opctx)
@@ -1208,40 +1299,42 @@ static int ps_signature_op_digest_verify_update(void *vctx,
 	ps_opctx_debug(opctx, "opctx: %p key: %p datalen: %lu", opctx, opctx->key,
 			datalen);
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!opctx->key->use_pkcs11)
+		return  ps_signature_op_digest_verify_update_fwd(opctx, data, datalen);
 
 	/* not supported for pkcs11 */
 	return OSSL_RV_ERR;
+}
 
-fwd:
-	default_digest_verify_update_fn =
-		(OSSL_FUNC_signature_digest_verify_update_fn *)
-			fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
-				OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE,
-				&opctx->pctx->dbg);
-	if (default_digest_verify_update_fn == NULL) {
+static int ps_signature_op_digest_verify_final_fwd(struct op_ctx *opctx,
+						   const unsigned char *sig,
+						   size_t siglen)
+{
+	OSSL_FUNC_signature_digest_verify_final_fn *fwd_digest_verify_final_fn;
+
+	fwd_digest_verify_final_fn = (OSSL_FUNC_signature_digest_verify_final_fn *)
+		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
+				  OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL,
+				  &opctx->pctx->dbg);
+	if (fwd_digest_verify_final_fn == NULL) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default digest_verify_update_fn");
-		return 0;
+				 "no fwd digest_verify_final_fn");
+		return OSSL_RV_ERR;
 	}
 
-	if (!default_digest_verify_update_fn(opctx->fwd_op_ctx,
-					     data, datalen)) {
+	if (fwd_digest_verify_final_fn(opctx->fwd_op_ctx, sig, siglen) != OSSL_RV_OK) {
 		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_digest_verify_update_fn failed");
-		return 0;
+				 "fwd_digest_verify_final_fn failed");
+		return OSSL_RV_ERR;
 	}
 
-	return 1;
+	return OSSL_RV_OK;
 }
 
 static int ps_signature_op_digest_verify_final(void *vctx,
 					       const unsigned char *sig,
 					       size_t siglen)
 {
-	OSSL_FUNC_signature_digest_verify_final_fn
-					*default_digest_verify_final_fn;
 	struct op_ctx *opctx = vctx;
 
 	if (!opctx || sig == NULL)
@@ -1250,31 +1343,11 @@ static int ps_signature_op_digest_verify_final(void *vctx,
 	ps_opctx_debug(opctx, "opctx: %p key: %p siglen: %lu", opctx, opctx->key,
 			siglen);
 
-	if (opctx->key->fwd_key)
-		goto fwd;
+	if (!opctx->key->use_pkcs11)
+		return ps_signature_op_digest_verify_final_fwd(opctx, sig, siglen);
 
 	/* not supported for pkcs11 */
 	return OSSL_RV_ERR;
-
-fwd:
-	default_digest_verify_final_fn =
-		(OSSL_FUNC_signature_digest_verify_final_fn *)
-			fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
-				OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL,
-				&opctx->pctx->dbg);
-	if (default_digest_verify_final_fn == NULL) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-				 "no default digest_verify_final_fn");
-		return OSSL_RV_ERR;
-	}
-
-	if (!default_digest_verify_final_fn(opctx->fwd_op_ctx, sig, siglen)) {
-		put_error_op_ctx(opctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "default_digest_verify_final_fn failed");
-		return OSSL_RV_ERR;
-	}
-
-	return OSSL_RV_OK;
 }
 
 #define DISP_SIG(tname, name) DECL_DISPATCH_FUNC(signature, tname, name)

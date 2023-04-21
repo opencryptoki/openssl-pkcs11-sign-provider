@@ -6,7 +6,9 @@
 #ifndef _PKCS11SIGN_COMMON_H
 #define _PKCS11SIGN_COMMON_H
 
+#include <stdbool.h>
 #include <bits/types/FILE.h>
+#include <openssl/evp.h>
 #include <openssl/types.h>
 #include <openssl/core_dispatch.h>
 #include <opencryptoki/pkcs11types.h>
@@ -70,42 +72,45 @@ struct provider_ctx {
 #define ps_pctx_debug(pctx, fmt...)	ps_dbg_debug(&(pctx->dbg), fmt)
 
 struct obj {
+	/* common */
+	unsigned int refcnt;
 	struct provider_ctx *pctx;
+
+	int type;
+	OSSL_PARAM *params;	/* NULL-terminated */
+
+	/* fwd */
+	void *fwd_key;
+
+	/* pkcs11 */
+	bool use_pkcs11;
 	struct pkcs11_module *pkcs11;
 	CK_SLOT_ID slot_id;
 	char *pin;
-
 	CK_ATTRIBUTE_PTR attrs;
 	CK_ULONG nattrs;
-
-	OSSL_PARAM *params;	/* NULL-terminated */
-
-	unsigned int refcnt;
-
-	int type;
-	void *fwd_key;
-
-	/* REVISIT */
-	unsigned char *secure_key;
 };
 #define ps_obj_debug(obj, fmt...)	ps_dbg_debug(&(obj->pctx->dbg), fmt)
 
 struct op_ctx {
+	/* common */
 	struct provider_ctx *pctx;
 	int type;
 	int operation;
 	char *prop;
 
+	EVP_MD *md;
+	EVP_MD_CTX *mdctx;
+
+	/* pkcs11 */
 	struct obj *key;
 	CK_OBJECT_HANDLE hobject;
 	CK_SESSION_HANDLE hsession;
+	CK_MECHANISM mech;
 
+	/* fwd */
 	void *fwd_op_ctx;
 	void (*fwd_op_ctx_free)(void *);
-
-	EVP_MD *md;
-	EVP_MD_CTX *mdctx;
-	CK_MECHANISM mech;
 };
 #define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
 

@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <openssl/evp.h>
+#include <openssl/x509.h>
 #include <openssl/core_names.h>
 
 #include "common.h"
@@ -56,26 +57,79 @@ static int op_ctx_init_fwd(struct op_ctx *octx, int selection, const OSSL_PARAM 
 	return OSSL_RV_OK;
 }
 
+static void *keymgmt_fwd_new(struct provider_ctx *pctx, int type)
+{
+	OSSL_FUNC_keymgmt_new_fn *fwd_new_fn;
+	struct dbg *dbg = &pctx->dbg;
+
+	fwd_new_fn = (OSSL_FUNC_keymgmt_new_fn *)
+		fwd_keymgmt_get_func(&pctx->fwd, type,
+				     OSSL_FUNC_KEYMGMT_NEW,
+				     dbg);
+	if (!fwd_new_fn)
+		return NULL;
+
+	return fwd_new_fn(&pctx->fwd.ctx);
+}
+
+static int keymgmt_fetch_pki(struct obj *key)
+{
+	OSSL_FUNC_keymgmt_import_fn *fwd_import_fn;
+	OSSL_PARAM *params;
+	EVP_PKEY *pkey;
+	CK_BYTE_PTR pki;
+	CK_ULONG pkilen;
+	int selection;
+
+	if (obj_get_pub_key_info(key, &pki, &pkilen) != OSSL_RV_OK) {
+		ps_obj_debug(key, "key: %p, no public_key_info available",
+			     key);
+		return OSSL_RV_ERR;
+	}
+
+	pkey = d2i_PUBKEY(NULL, (const unsigned char **)&pki, pkilen);
+	if (!pkey) {
+		ps_obj_debug(key, "key: %p, unable to parse public_key_info",
+			     key);
+		return OSSL_RV_ERR;
+	}
+
+	selection = OSSL_KEYMGMT_SELECT_PUBLIC_KEY |
+		    OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS |
+		    OSSL_KEYMGMT_SELECT_OTHER_PARAMETERS;
+	if (EVP_PKEY_todata(pkey, selection, &params) != OSSL_RV_OK) {
+		ps_obj_debug(key, "key: %p, unable to get params",
+			     key);
+		return OSSL_RV_ERR;
+	}
+
+	fwd_import_fn = (OSSL_FUNC_keymgmt_import_fn *)
+		fwd_keymgmt_get_func(&key->pctx->fwd,
+				     key->type, OSSL_FUNC_KEYMGMT_IMPORT,
+				     &key->pctx->dbg);
+	if (fwd_import_fn == NULL) {
+		ps_obj_debug(key, "key: %p, no fwd_import_fn",
+			     key);
+		return OSSL_RV_ERR;
+	}
+
+	if (fwd_import_fn(key->fwd_key, selection, params) != OSSL_RV_OK) {
+		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+			      "fwd_import_fn failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
+}
+
 static struct obj *keymgmt_new(struct provider_ctx *pctx,
 			       int type)
 {
-	OSSL_FUNC_keymgmt_new_fn *fwd_new_fn;
 	struct dbg *dbg = &pctx->dbg;
 	struct obj *key;
 
 	ps_dbg_debug(dbg, "pctx: %p, type: %d",
 		     pctx, type);
-
-	fwd_new_fn = (OSSL_FUNC_keymgmt_new_fn *)
-		fwd_keymgmt_get_func(&pctx->fwd, type,
-				     OSSL_FUNC_KEYMGMT_NEW,
-				     &pctx->dbg);
-
-	if (!fwd_new_fn) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			       "no default new_fn");
-		return NULL;
-	}
 
 	key = obj_new_init(pctx, NULL, CK_UNAVAILABLE_INFORMATION, NULL);
 	if (!key) {
@@ -84,13 +138,12 @@ static struct obj *keymgmt_new(struct provider_ctx *pctx,
 		return NULL;
 	}
 
-	key->fwd_key = fwd_new_fn(pctx->fwd.ctx);
-	if (!key->fwd_key) {
-		put_error_pctx(pctx, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			       "fwd_new_fn failed");
+	key->fwd_key = keymgmt_fwd_new(pctx, type);
+	if (!key->fwd_key)
 		goto err;
-	}
+
 	key->type = type;
+	key->use_pkcs11 = false;
 
 	ps_dbg_debug(dbg, "pctx: %p, type: %d, --> key: %p, fwd_key: %p",
 		     pctx, type, key, key->fwd_key);
@@ -245,8 +298,8 @@ DISP_KMGMT_FN(import,		ps_keymgmt_import);
 static void ps_keymgmt_free(void *vkey)
 {
 	OSSL_FUNC_keymgmt_free_fn *fwd_free_fn;
-	struct dbg *dbg;
 	struct obj *key = vkey;
+	struct dbg *dbg;
 
 	if (!key)
 		return;
@@ -254,19 +307,16 @@ static void ps_keymgmt_free(void *vkey)
 
 	ps_dbg_debug(dbg, "key: %p", key);
 
-	if (!key->fwd_key)
-		goto out;
-
 	fwd_free_fn = (OSSL_FUNC_keymgmt_free_fn *)
 		fwd_keymgmt_get_func(&key->pctx->fwd,
 				     key->type, OSSL_FUNC_KEYMGMT_FREE,
 				     &key->pctx->dbg);
 
-	if (!fwd_free_fn) {
+	if (key->fwd_key && fwd_free_fn) {
 		ps_dbg_debug(dbg, "free fwd_key: %p", key->fwd_key);
 		fwd_free_fn(key->fwd_key);
 	}
-out:
+
 	obj_free(key);
 }
 
@@ -299,147 +349,6 @@ out:
 	return rv;
 }
 
-static int get_pubkey_obj(const struct obj *key, unsigned char **pub, unsigned long *npub)
-{
-	CK_BYTE_PTR p;
-	CK_ULONG np;
-
-	if (obj_get_pub_key_info(key, &p, &np) != OSSL_RV_OK)
-		return OSSL_RV_ERR;
-
-	*pub = OPENSSL_memdup(p, np);
-	if (!*pub)
-		return OSSL_RV_ERR;
-	*npub = np;
-
-	return OSSL_RV_OK;
-}
-
-static int get_pubkey_fwd(const struct obj *key, unsigned char **pub, unsigned long *npub)
-{
-	OSSL_FUNC_keymgmt_get_params_fn *fwd_get_params_fn;
-	OSSL_PARAM params[2], *p = params;
-
-	*p++ = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY, NULL, 0);
-	*p++ = OSSL_PARAM_construct_end();
-
-	fwd_get_params_fn = (OSSL_FUNC_keymgmt_get_params_fn *)
-		fwd_keymgmt_get_func(&key->pctx->fwd,
-				     key->type, OSSL_FUNC_KEYMGMT_GET_PARAMS,
-				     &key->pctx->dbg);
-	if (!fwd_get_params_fn)
-		return OSSL_RV_ERR;
-
-	if (fwd_get_params_fn(key->fwd_key, params) != OSSL_RV_OK) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			      "fwd_get_params_fn failed");
-		return OSSL_RV_ERR;
-	}
-
-	params[0].data = OPENSSL_zalloc(params[0].return_size);
-	params[0].data_size = params[0].return_size;
-
-	if (fwd_get_params_fn(key->fwd_key, params) != OSSL_RV_OK) {
-		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-			      "fwd_get_params_fn failed");
-		return OSSL_RV_ERR;
-	}
-
-	*pub = (unsigned char *)params[0].data;
-	*npub = params[0].data_size;
-
-	return OSSL_RV_OK;
-}
-
-static int keymgmt_match_pkcs11(const struct obj *key1,
-				const struct obj *key2,
-				int selection)
-{
-	struct dbg *dbg = &key1->pctx->dbg;
-	CK_BYTE_PTR id1, id2;
-	CK_ULONG id1len, id2len;
-	int rv;
-
-	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d",
-		     key1, key2, selection);
-
-	if (obj_get_id(key1, &id1, &id1len) != OSSL_RV_OK) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	if (obj_get_id(key2, &id2, &id2len) != OSSL_RV_OK) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	if (!id1 || !id2 || !id1len || !id2len) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	if (id1len != id2len) {
-		rv = OSSL_RV_FALSE;
-		goto out;
-	}
-
-	rv = (memcmp(id1, id2, id1len) == 0) ?
-		OSSL_RV_TRUE :
-		OSSL_RV_FALSE;
-out:
-	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d --> %s",
-		     key1, key2, selection,
-		     (rv == OSSL_RV_TRUE) ? "match" : "mismatch");
-	return rv;
-}
-
-static int keymgmt_match_mixed(const struct obj *key1, const struct obj *key2,
-			       int selection)
-{
-	struct dbg *dbg = &key1->pctx->dbg;
-	unsigned char *pub1 = NULL, *pub2 = NULL;
-	size_t npub1, npub2, o1, o2, n;
-	int rv;
-
-	ps_dbg_debug(dbg, "key1(fwd): %p(%p) key2(fwd): %p(%p), selection: %d",
-		     key1, key1->fwd_key, key2, key2->fwd_key, selection);
-
-	rv = (key1->fwd_key) ?
-		get_pubkey_fwd(key1, &pub1, &npub1) :
-		get_pubkey_obj(key1, &pub1, &npub1);
-	if (rv != OSSL_RV_OK) {
-		ps_dbg_debug(dbg, "key1: %p, no public key info",
-			     key1);
-		goto out;
-	}
-
-	rv = (key2->fwd_key) ?
-		get_pubkey_fwd(key2, &pub2, &npub2) :
-		get_pubkey_obj(key2, &pub2, &npub2);
-	if (rv != OSSL_RV_OK) {
-		ps_dbg_debug(dbg, "key2: %p, no public key info",
-			     key2);
-		goto out;
-	}
-
-	/* TODO use ASN1 parse to compare */
-	o1 = npub1 - min(npub1, npub2);
-	o2 = npub2 - min(npub1, npub2);
-	n = min(npub1, npub2);
-
-	rv = (memcmp((pub1 + o1), (pub2 + o2), n) == 0) ?
-		OSSL_RV_TRUE :
-		OSSL_RV_FALSE;
-out:
-	OPENSSL_free(pub1);
-	OPENSSL_free(pub2);
-
-	ps_dbg_debug(dbg, "key1(fwd): %p(%p) key2(fwd): %p(%p), selection: %d --> %s",
-		     key1, key1->fwd_key, key2, key2->fwd_key, selection,
-		     (rv == OSSL_RV_TRUE) ? "match" : "mismatch");
-	return rv;
-}
-
 static int ps_keymgmt_match(const void *vkey1, const void *vkey2,
 			    int selection)
 {
@@ -453,43 +362,14 @@ static int ps_keymgmt_match(const void *vkey1, const void *vkey2,
 	ps_dbg_debug(dbg, "key1: %p key2: %p, selection: %d",
 		     key1, key2, selection);
 
-	if (key1 == key2)
-		return OSSL_RV_TRUE;
-
-	if (key1->type != key2->type)
-		return OSSL_RV_FALSE;
-
-	if (key1->fwd_key && key2->fwd_key)
-		return keymgmt_match_fwd(key1, key2, selection);
-
-	if (!key1->fwd_key && !key2->fwd_key)
-		return keymgmt_match_pkcs11(key1, key2, selection);
-
-	return keymgmt_match_mixed(key1, key2, selection);
+	return keymgmt_match_fwd(key1, key2, selection);
 }
 
-static int ps_keymgmt_validate(const void *vkey,
-				    int selection, int checktype)
+static int ps_keymgmt_validate_fwd(const struct obj *key,
+				   int selection, int checktype)
 {
 	OSSL_FUNC_keymgmt_validate_fn *fwd_validate_fn;
-	const struct obj *key = vkey;
-	int fwd_selection = selection;
-	struct dbg *dbg;
 
-	if (!key)
-		return OSSL_RV_ERR;
-	dbg = &key->pctx->dbg;
-
-	ps_dbg_debug(dbg, "key: %p selection: %d checktype: %d",
-		     key, selection, checktype);
-
-	if (key->fwd_key)
-		goto fwd;
-
-	/* not supported */
-	return OSSL_RV_ERR;
-
-fwd:
 	fwd_validate_fn = (OSSL_FUNC_keymgmt_validate_fn *)
 		fwd_keymgmt_get_func(&key->pctx->fwd,
 				     key->type, OSSL_FUNC_KEYMGMT_VALIDATE,
@@ -500,8 +380,39 @@ fwd:
 		return OSSL_RV_ERR;
 	}
 
-	return fwd_validate_fn(key->fwd_key, fwd_selection,
-			       checktype);
+	if (fwd_validate_fn(key->fwd_key, selection,
+			       checktype) != OSSL_RV_OK) {
+		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+			      "fwd_validate_fn failed");
+		return OSSL_RV_ERR;
+	}
+
+	return OSSL_RV_OK;
+}
+
+static int ps_keymgmt_validate(const void *vkey,
+			       int selection, int checktype)
+{
+	const struct obj *key = vkey;
+	struct dbg *dbg;
+
+	if (!key)
+		return OSSL_RV_ERR;
+	dbg = &key->pctx->dbg;
+
+	ps_dbg_debug(dbg, "key: %p selection: %d checktype: %d",
+		     key, selection, checktype);
+
+	if (!key->use_pkcs11)
+		return ps_keymgmt_validate_fwd(key, selection, checktype);
+
+	if (key->type != checktype)
+		return OSSL_RV_ERR;
+
+	if (!(selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY))
+		return OSSL_RV_ERR;
+
+	return OSSL_RV_OK;
 }
 
 static int ps_keymgmt_get_params(void *vkey, OSSL_PARAM params[])
@@ -519,13 +430,7 @@ static int ps_keymgmt_get_params(void *vkey, OSSL_PARAM params[])
 	for (p = params; (p && p->key); p++)
 		ps_dbg_debug(dbg, "param: %s (0x%x)", p->key, p->data_type);
 
-	if (key->fwd_key)
-		goto fwd;
-
-	/* TODO add get parameter */
-	return OSSL_RV_OK;
-
-fwd:
+	/* get params of fwd key first */
 	fwd_get_params_fn = (OSSL_FUNC_keymgmt_get_params_fn *)
 		fwd_keymgmt_get_func(&key->pctx->fwd,
 				     key->type, OSSL_FUNC_KEYMGMT_GET_PARAMS,
@@ -539,6 +444,7 @@ fwd:
 		return OSSL_RV_ERR;
 	}
 
+	/* no parameters supported for pkcs11 keys */
 	return OSSL_RV_OK;
 }
 
@@ -557,13 +463,6 @@ static int ps_keymgmt_set_params(void *vkey, const OSSL_PARAM params[])
 	for (p = params; (p && p->key); p++)
 		ps_dbg_debug(dbg, "param: %s (0x%x)", p->key, p->data_type);
 
-	if (key->fwd_key)
-		goto fwd;
-
-	/* TODO add set parameter */
-	return OSSL_RV_OK;
-
-fwd:
 	fwd_set_params_fn = (OSSL_FUNC_keymgmt_set_params_fn *)
 		fwd_keymgmt_get_func(&key->pctx->fwd,
 				     key->type, OSSL_FUNC_KEYMGMT_SET_PARAMS,
@@ -577,12 +476,39 @@ fwd:
 		return OSSL_RV_ERR;
 	}
 
+	if (!key->use_pkcs11)
+		return OSSL_RV_OK;
+
+	/* no parameters supported for pkcs11 keys */
+	return OSSL_RV_OK;
+}
+
+static int ps_keymgmt_has_fwd(const struct obj *key, int selection)
+{
+	OSSL_FUNC_keymgmt_has_fn *fwd_has_fn;
+
+	fwd_has_fn = (OSSL_FUNC_keymgmt_has_fn *)
+		fwd_keymgmt_get_func(&key->pctx->fwd, key->type,
+				     OSSL_FUNC_KEYMGMT_HAS, &key->pctx->dbg);
+	if (!fwd_has_fn) {
+		put_error_key(key,
+			      PS_ERR_DEFAULT_PROV_FUNC_MISSING,
+			      "no fwd_has_fn");
+		return OSSL_RV_FALSE;
+	}
+
+	if (fwd_has_fn(key->fwd_key, selection) != OSSL_RV_OK) {
+		put_error_key(key,
+			      PS_ERR_DEFAULT_PROV_FUNC_FAILED,
+			      "fwd_has_fn failed");
+		return OSSL_RV_FALSE;
+	}
+
 	return OSSL_RV_OK;
 }
 
 static int ps_keymgmt_has(const void *vkey, int selection)
 {
-	OSSL_FUNC_keymgmt_has_fn *fwd_has_fn;
 	const struct obj *key = vkey;
 	int rv = OSSL_RV_FALSE;
 	struct dbg *dbg;
@@ -594,8 +520,8 @@ static int ps_keymgmt_has(const void *vkey, int selection)
 	ps_dbg_debug(dbg, "key: %p, selection: %d",
 		     key, selection);
 
-	if (key->fwd_key)
-		goto fwd;
+	if (!key->use_pkcs11)
+		return ps_keymgmt_has_fwd(key, selection);
 
 	if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) {
 		switch (obj_get_class(key)) {
@@ -620,40 +546,13 @@ static int ps_keymgmt_has(const void *vkey, int selection)
 	}
 
 	return rv;
-
-fwd:
-	fwd_has_fn = (OSSL_FUNC_keymgmt_has_fn *)
-		fwd_keymgmt_get_func(&key->pctx->fwd, key->type,
-				     OSSL_FUNC_KEYMGMT_HAS, &key->pctx->dbg);
-	if (!fwd_has_fn) {
-		put_error_key(key,
-			      PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-			      "no fwd_has_fn");
-		return OSSL_RV_FALSE;
-	}
-
-	return fwd_has_fn(key->fwd_key, selection);
 }
 
-static int ps_keymgmt_export(void *vkey, int selection,
-				  OSSL_CALLBACK *param_callback, void *cbarg)
+static int ps_keymgmt_export_fwd(struct obj *key, int selection,
+				 OSSL_CALLBACK *param_callback, void *cbarg)
 {
 	OSSL_FUNC_keymgmt_export_fn *fwd_export_fn;
-	struct obj *key = vkey;
 
-	if (!key || !param_callback)
-		return OSSL_RV_ERR;
-
-	ps_dbg_debug(&key->pctx->dbg, "key: %p selection: %d",
-		     key, selection);
-
-	if (key->fwd_key)
-		goto fwd;
-
-	/* not supported */
-	return OSSL_RV_ERR;
-
-fwd:
 	fwd_export_fn = (OSSL_FUNC_keymgmt_export_fn *)
 			fwd_keymgmt_get_func(&key->pctx->fwd,
 					key->type, OSSL_FUNC_KEYMGMT_EXPORT,
@@ -673,30 +572,30 @@ fwd:
 	return OSSL_RV_OK;
 }
 
-static int ps_keymgmt_import(void *vkey, int selection,
-			     const OSSL_PARAM params[])
+static int ps_keymgmt_export(void *vkey, int selection,
+			     OSSL_CALLBACK *param_callback, void *cbarg)
 {
-	OSSL_FUNC_keymgmt_import_fn *fwd_import_fn;
 	struct obj *key = vkey;
-	const OSSL_PARAM *p;
-	struct dbg *dbg;
 
-	if (key == NULL)
+	if (!key || !param_callback)
 		return OSSL_RV_ERR;
-	dbg = &key->pctx->dbg;
 
-	ps_dbg_debug(dbg, "key: %p selection: %d",
+	ps_dbg_debug(&key->pctx->dbg, "key: %p selection: %d",
 		     key, selection);
-	for (p = params; (p && p->key); p++)
-		ps_dbg_debug(dbg, "param: %s (0x%x)", p->key, p->data_type);
 
-	if (key->fwd_key)
-		goto fwd;
+	if (!key->use_pkcs11)
+		return ps_keymgmt_export_fwd(key, selection,
+					     param_callback, cbarg);
 
 	/* not supported */
 	return OSSL_RV_ERR;
+}
 
-fwd:
+static int ps_keymgmt_import_fwd(struct obj *key, int selection,
+				 const OSSL_PARAM params[])
+{
+	OSSL_FUNC_keymgmt_import_fn *fwd_import_fn;
+
 	fwd_import_fn = (OSSL_FUNC_keymgmt_import_fn *)
 		fwd_keymgmt_get_func(&key->pctx->fwd,
 				     key->type, OSSL_FUNC_KEYMGMT_IMPORT,
@@ -714,6 +613,29 @@ fwd:
 	}
 
 	return OSSL_RV_OK;
+}
+
+static int ps_keymgmt_import(void *vkey, int selection,
+			     const OSSL_PARAM params[])
+{
+	struct obj *key = vkey;
+	const OSSL_PARAM *p;
+	struct dbg *dbg;
+
+	if (key == NULL)
+		return OSSL_RV_ERR;
+	dbg = &key->pctx->dbg;
+
+	ps_dbg_debug(dbg, "key: %p selection: %d",
+		     key, selection);
+	for (p = params; (p && p->key); p++)
+		ps_dbg_debug(dbg, "param: %s (0x%x)", p->key, p->data_type);
+
+	if (!key->use_pkcs11)
+		return  ps_keymgmt_import_fwd(vkey, selection, params);
+
+	/* not supported */
+	return OSSL_RV_ERR;
 }
 
 static void ps_keymgmt_gen_cleanup(void *vgenctx)
@@ -797,7 +719,7 @@ static void *ps_keymgmt_gen(void *vgenctx,
 	OSSL_FUNC_keymgmt_gen_fn *fwd_gen_fn;
 	struct op_ctx *octx = vgenctx;
 	struct obj *key;
-	EVP_PKEY *pkey;
+	void *pkey;
 
 	if (!octx)
 		return NULL;
@@ -829,6 +751,7 @@ static void *ps_keymgmt_gen(void *vgenctx,
 	}
 
 	key->type = octx->type;
+	key->use_pkcs11 = false;
 	key->fwd_key = pkey;
 
 	ps_dbg_debug(&octx->pctx->dbg, "key: %p", key);
@@ -844,9 +767,21 @@ static void *ps_keymgmt_load(const void *reference, size_t reference_sz)
 		return NULL;
 
 	key = obj_get((struct obj *)reference);
-	ps_dbg_debug(&key->pctx->dbg, "key: %p", key);
+	key->use_pkcs11 = (obj_get_class(key) == CKO_PRIVATE_KEY);
 
+	key->fwd_key = keymgmt_fwd_new(key->pctx, key->type);
+	if (!key->fwd_key)
+		goto err;
+
+	if (keymgmt_fetch_pki(key) != OSSL_RV_OK)
+		goto err;
+
+	ps_dbg_debug(&key->pctx->dbg, "key: %p", key);
 	return key;
+
+err:
+	obj_free(key);
+	return NULL;
 }
 
 DISP_KMGMT_FN(new,			ps_keymgmt_rsa_new);
