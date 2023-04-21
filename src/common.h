@@ -67,6 +67,7 @@ struct provider_ctx {
 	struct ossl_provider fwd;
 	struct pkcs11_module *pkcs11;
 };
+#define ps_pctx_debug(pctx, fmt...)	ps_dbg_debug(&(pctx->dbg), fmt)
 
 struct obj {
 	struct provider_ctx *pctx;
@@ -108,6 +109,8 @@ struct op_ctx {
 };
 #define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
 
+int op_ctx_session_ensure(struct op_ctx *opctx);
+int op_ctx_object_ensure(struct op_ctx *opctx);
 int op_ctx_init(struct op_ctx *octx, struct obj *key, int operation);
 struct op_ctx *op_ctx_new(struct provider_ctx *pctx, const char *prop, int type);
 struct op_ctx *op_ctx_dup(struct op_ctx * opctx);

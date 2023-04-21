@@ -44,6 +44,53 @@ static int op_ctx_init_key(struct op_ctx *octx, struct obj *key)
 	return OSSL_RV_OK;
 }
 
+int op_ctx_session_ensure(struct op_ctx *opctx)
+{
+	if (!opctx->key->use_pkcs11) {
+		ps_opctx_debug(opctx, "opctx: %p, fwd-only", opctx);
+		return OSSL_RV_OK;
+	}
+
+	if ((opctx->hsession == CK_INVALID_HANDLE) &&
+	    (pkcs11_session_open_login(opctx->pctx->pkcs11, opctx->key->slot_id,
+				       &opctx->hsession, opctx->key->pin,
+				       &opctx->pctx->dbg) != CKR_OK)) {
+		ps_opctx_debug(opctx, "ERROR: pkcs11_session_open_login() failed");
+		return OSSL_RV_ERR;
+	}
+
+	ps_opctx_debug(opctx, "opctx: %p, hsession: %d",
+		       opctx, opctx->hsession);
+
+	return OSSL_RV_OK;
+}
+
+int op_ctx_object_ensure(struct op_ctx *opctx)
+{
+	if (!opctx->key->use_pkcs11) {
+		ps_opctx_debug(opctx, "opctx: %p, fwd-only", opctx);
+		return OSSL_RV_OK;
+	}
+
+	if (op_ctx_session_ensure(opctx) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
+	if ((opctx->hobject == CK_INVALID_HANDLE) &&
+	    (pkcs11_object_handle(opctx->pctx->pkcs11,
+				  opctx->hsession,
+				  opctx->key->attrs, opctx->key->nattrs,
+				  &opctx->hobject,
+				  &opctx->pctx->dbg) != CKR_OK)) {
+		ps_opctx_debug(opctx, "ERROR: pkcs11_object_handle() failed");
+		return OSSL_RV_ERR;
+	}
+
+	ps_opctx_debug(opctx, "opctx: %p, hobject: %d",
+		       opctx, opctx->hobject);
+
+	return OSSL_RV_OK;
+}
+
 int op_ctx_init(struct op_ctx *octx, struct obj *key, int operation)
 {
 	struct dbg *dbg = &octx->pctx->dbg;

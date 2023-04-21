@@ -22,55 +22,6 @@ static int ps_get_bits(struct obj *key __unused)
 	return 0;
 }
 
-int op_ctx_session_ensure(struct op_ctx *opctx)
-{
-	if (opctx->key->fwd_key) {
-		ps_opctx_debug(opctx, "opctx: %p, fwd_key: session handle n/a",
-			       opctx);
-		return OSSL_RV_OK;
-	}
-
-	if ((opctx->hsession == CK_INVALID_HANDLE) &&
-	    (pkcs11_session_open_login(opctx->pctx->pkcs11, opctx->key->slot_id,
-				       &opctx->hsession, opctx->key->pin,
-				       &opctx->pctx->dbg) != CKR_OK)) {
-		ps_opctx_debug(opctx, "ERROR: pkcs11_session_open_login() failed");
-		return OSSL_RV_ERR;
-	}
-
-	ps_opctx_debug(opctx, "opctx: %p, hsession: %d",
-		       opctx, opctx->hsession);
-
-	return OSSL_RV_OK;
-}
-
-int op_ctx_object_ensure(struct op_ctx *opctx)
-{
-	if (opctx->key->fwd_key) {
-		ps_opctx_debug(opctx, "opctx: %p, fwd_key: object handle n/a",
-			       opctx);
-		return OSSL_RV_OK;
-	}
-
-	if (op_ctx_session_ensure(opctx) != OSSL_RV_OK)
-		return OSSL_RV_ERR;
-
-	if ((opctx->hobject == CK_INVALID_HANDLE) &&
-	    (pkcs11_object_handle(opctx->pctx->pkcs11,
-				  opctx->hsession,
-				  opctx->key->attrs, opctx->key->nattrs,
-				  &opctx->hobject,
-				  &opctx->pctx->dbg) != CKR_OK)) {
-		ps_opctx_debug(opctx, "ERROR: pkcs11_object_handle() failed");
-		return OSSL_RV_ERR;
-	}
-
-	ps_opctx_debug(opctx, "opctx: %p, hobject: %d",
-		       opctx, opctx->hobject);
-
-	return OSSL_RV_OK;
-}
-
 static int op_ctx_signature_size(struct op_ctx *opctx, size_t *siglen)
 {
 	unsigned char *rawsig, dummy;
