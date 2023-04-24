@@ -56,4 +56,30 @@ diff -q "${TMPPDIR}/random-512.bin" "${TMPPDIR}/data.dec" \
 echo "diff: identical results"
 rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
 
+echo "##################################################"
+echo "## EC: tls-server/client (ECDHE-ECDSA-AES256-GCM-SHA384)"
+echo "##"
+
+rm -f "${TMPPDIR}/fail.*"
+
+# server
+ossl '
+s_server -CAfile ${FILE_PEM_CA_CRT}
+         -key ${URI_KEY_ECDSA_PRV} -cert ${FILE_PEM_ECDSA_CRT}
+         -cipher ECDHE-ECDSA-AES256-GCM-SHA384
+         -accept 4433 -naccept +1' \
+|| touch "${TMPPDIR}/fail.server" &
+sleep 1
+
+#client
+ossl '
+s_client -CAfile ${FILE_PEM_CA_CRT}
+        -tls1_2 <<< "Q"' \
+|| touch "${TMPPDIR}/fail.client"
+
+# validation
+test -f "${TMPPDIR}/fail.server" -o -f "${TMPPDIR}/fail.server" \
+|| exit 99
+echo "server/client: ok"
+
 exit 0
