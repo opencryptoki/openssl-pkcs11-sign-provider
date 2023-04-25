@@ -16,12 +16,6 @@
 #include "pkcs11.h"
 #include "object.h"
 
-static int ps_get_bits(struct obj *key __unused)
-{
-	/* TODO implementation */
-	return 0;
-}
-
 static int op_ctx_signature_size(struct op_ctx *opctx, size_t *siglen)
 {
 	unsigned char *rawsig, dummy;
@@ -46,6 +40,7 @@ static int op_ctx_signature_size(struct op_ctx *opctx, size_t *siglen)
 		ps_opctx_debug(opctx, "ERROR: cannot alloc dummy buffer");
 		return OSSL_RV_ERR;
 	}
+
 	/*
 	 * HACK: the length of OPENSSL ecdsa signatures depends on its content.
 	 * Filling the dummy buffer with 0xff cause the convertion to return
@@ -512,82 +507,6 @@ static EVP_MD *ps_signature_op_get_md(struct op_ctx *opctx)
 
 	ps_opctx_debug(opctx, "md: %s", EVP_MD_name(md));
 	return md;
-}
-
-static int ps_signature_op_get_padding(struct op_ctx *opctx)
-{
-	char padding[50];
-	OSSL_PARAM ctx_params[] = {
-		OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_PAD_MODE,
-				&padding, sizeof(padding)),
-		OSSL_PARAM_END
-	};
-
-	ps_opctx_debug(opctx, "opctx: %p", opctx);
-
-	if (!ps_signature_op_get_ctx_params(opctx, ctx_params) ||
-	    !OSSL_PARAM_modified(&ctx_params[0])) {
-		put_error_op_ctx(opctx, PS_ERR_MISSING_PARAMETER,
-				 "ps_signature_op_get_ctx_params failed to "
-				 "get OSSL_PKEY_PARAM_PAD_MODE");
-		return -1;
-	}
-
-	ps_opctx_debug(opctx, "opctx: %p, padding: %s",
-		       opctx, padding);
-	return ossl_parse_padding(padding);
-}
-
-static int ps_signature_op_get_pss_saltlen(struct op_ctx *opctx,
-					   struct obj *key,
-					   EVP_MD *mgf_md)
-{
-	char saltlen[50];
-	OSSL_PARAM ctx_params[] = {
-		OSSL_PARAM_utf8_string(OSSL_SIGNATURE_PARAM_PSS_SALTLEN,
-				&saltlen, sizeof(saltlen)),
-		OSSL_PARAM_END
-	};
-	int salt_len, rsa_bits, max_saltlen;
-
-	ps_opctx_debug(opctx, "opctx: %p", opctx);
-
-	if (!ps_signature_op_get_ctx_params(opctx, ctx_params) ||
-	    !OSSL_PARAM_modified(&ctx_params[0])) {
-		put_error_op_ctx(opctx, PS_ERR_MISSING_PARAMETER,
-				 "ps_signature_op_get_ctx_params failed to "
-				 "get OSSL_SIGNATURE_PARAM_PSS_SALTLEN");
-		return -1;
-	}
-
-	ps_opctx_debug(opctx, "saltlen: %s", saltlen);
-
-	rsa_bits = ps_get_bits(key);
-	if (rsa_bits <= 0) {
-		ps_opctx_debug(opctx,
-			"ERROR: ps_keymgmt_get_bits failed");
-		return -1;
-	}
-
-	max_saltlen = rsa_bits / 8 - EVP_MD_size(mgf_md) - 2;
-
-	if (strcmp(saltlen, OSSL_PKEY_RSA_PSS_SALT_LEN_DIGEST) == 0)
-		salt_len = EVP_MD_size(mgf_md);
-	else if (strcmp(saltlen, OSSL_PKEY_RSA_PSS_SALT_LEN_MAX) == 0)
-		salt_len = max_saltlen;
-	else if (strcmp(saltlen, OSSL_PKEY_RSA_PSS_SALT_LEN_AUTO) == 0)
-		salt_len = max_saltlen;
-	else
-		salt_len = atoi(saltlen);
-
-	if (salt_len > max_saltlen || salt_len < 0) {
-		put_error_op_ctx(opctx, PS_ERR_INVALID_SALTLEN,
-				 "invalid salt len: %d", saltlen);
-		return -1;
-	}
-
-	ps_opctx_debug(opctx, "salt_len: %d", salt_len);
-	return salt_len;
 }
 
 static int ps_signature_op_sign_init_fwd(struct op_ctx *opctx,
