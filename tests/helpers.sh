@@ -2,10 +2,10 @@
 # Copyright (C) IBM Corp. 2022, 2023
 # SPDX-License-Identifier: Apache-2.0
 
-gen_unsetvars() {
-    grep "^export" "${TMPPDIR}/testvars" \
+gen_unsetenv() {
+    grep "^export" "${TMPPDIR}/setenv" \
     | sed -e 's/export/unset/' -e 's/=.*$//' \
-    >> "${TMPPDIR}/unsetvars"
+    >> "${TMPPDIR}/unsetenv"
 }
 
 ensure_ca_key_cert() {
@@ -142,7 +142,7 @@ generate_payload() {
 }
 
 ossl() {
-	echo "# r "$* >> ${TMPPDIR}/gdb-commands.txt
+	echo "r "$* >> ${TMPPDIR}/ossl.gdb
 	echo openssl $*
 	eval openssl $1
 }

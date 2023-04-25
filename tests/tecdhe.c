@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) IBM Corp. 2023
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #define _POSIX_C_SOURCE 1
 #include <stdio.h>
 #include <openssl/bio.h>

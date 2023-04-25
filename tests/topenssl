@@ -4,6 +4,7 @@
 
 test -z "${TESTSDIR}" && exit 77
 source "${TESTSDIR}/helpers.sh"
+echo "set breakpoint pending on" > "${TMPPDIR}/ossl.gdb"
 
 echo "##################################################"
 echo "## Tests with openssl commands"

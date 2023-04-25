@@ -8,8 +8,8 @@ TEST_NAME=$(basename ${TEST_PARAMS[0]})
 TEST_PATH=$(dirname ${TEST_PARAMS[0]})
 TOKEN_DRIVER=${TEST_PARAMS[1]}
 
-if [ -f "./tmp.${TOKEN_DRIVER}/testvars" ];  then
-    source ./tmp.${TOKEN_DRIVER}/testvars
+if [ -f "./tmp.${TOKEN_DRIVER}/setenv" ];  then
+    source ./tmp.${TOKEN_DRIVER}/setenv
 else
     exit 77 # token not configured, skip
 fi

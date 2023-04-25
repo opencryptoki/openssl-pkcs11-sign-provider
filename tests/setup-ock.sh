@@ -37,8 +37,7 @@ echo "##"
 BASEDIR=$(pwd)
 
 TMPPDIR=tmp.ock
-mkdir -p ${TMPPDIR} \
-|| exit 99
+mkdir -p ${TMPPDIR}
 
 #######################################
 echo "## Generate test data"
@@ -133,8 +132,8 @@ sed -e "s|@libtoollibs[@]|${LIBSPATH}|g" \
 || exit 99
 
 #######################################
-echo "## Export tests variables to ${TMPPDIR}/testvars"
-tee > ${TMPPDIR}/testvars << DBGSCRIPT
+echo "## Export tests variables to ${TMPPDIR}/setenv"
+tee > ${TMPPDIR}/setenv << DBGSCRIPT
 export TESTSDIR="${TESTSDIR}"
 export TMPPDIR="${BASEDIR}/${TMPPDIR}"
 export OPENSSL_CONF="${BASEDIR}/${OPENSSL_CONF}"
@@ -156,7 +155,7 @@ export URI_KEY_RSA4K_PUB="${URI_KEY_RSA4K_PUB}?pin-source=${BASEDIR}/${PIN_SOURC
 DBGSCRIPT
 test $? -eq 0 \
 || exit 99
-gen_unsetvars
+gen_unsetenv
 
 echo "##"
 echo "##################################################"
