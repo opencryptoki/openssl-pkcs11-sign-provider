@@ -198,7 +198,8 @@ CK_RV pkcs11_sign(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_Sign(hsession, data, datalen, sig, siglen);
+	ck_rv = pkcs11->fns->C_Sign(hsession, (CK_BYTE_PTR)data, datalen,
+				    sig, siglen);
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_Sign() failed: %d",
 			     pkcs11->soname, ck_rv);
@@ -273,7 +274,7 @@ CK_RV pkcs11_decrypt_init(struct pkcs11_module *pkcs11,
 
 CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 		     CK_SESSION_HANDLE hsession,
-		     unsigned char *cdata, size_t cdatalen,
+		     const unsigned char *cdata, size_t cdatalen,
 		     unsigned char *data, size_t *datalen,
 		     struct dbg *dbg)
 {
@@ -282,7 +283,8 @@ CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_Decrypt(hsession, cdata, cdatalen, data, datalen);
+	ck_rv = pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
+				       data, datalen);
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_Decrypt() failed: %d",
 			     pkcs11->soname, ck_rv);
@@ -303,7 +305,8 @@ CK_RV pkcs11_decrypt_update(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_DecryptUpdate(hsession, cpdata, cpdatalen, pdata, pdatalen);
+	ck_rv = pkcs11->fns->C_DecryptUpdate(hsession, cpdata, cpdatalen,
+					     pdata, pdatalen);
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_DecryptUpdate() failed: %d",
 			     pkcs11->soname, ck_rv);
@@ -334,8 +337,10 @@ CK_RV pkcs11_decrypt_final(struct pkcs11_module *pkcs11,
 }
 
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
-			      CK_SESSION_HANDLE session, CK_OBJECT_HANDLE ohandle,
-			      CK_ATTRIBUTE_PTR *attributes, CK_ULONG *nattributes,
+			      CK_SESSION_HANDLE session,
+			      CK_OBJECT_HANDLE ohandle,
+			      CK_ATTRIBUTE_PTR *attributes,
+			      CK_ULONG *nattributes,
 			      struct dbg *dbg)
 {
 	CK_ATTRIBUTE template[] = {
