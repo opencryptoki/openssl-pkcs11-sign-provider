@@ -43,22 +43,6 @@ const OSSL_ITEM ps_prov_reason_strings[] = {
 	{0, NULL }
 };
 
-int ossl_parse_padding(const char *padding)
-{
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_NONE) == 0)
-		return RSA_NO_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_PKCSV15) == 0)
-		return RSA_PKCS1_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_OAEP) == 0)
-		return RSA_PKCS1_OAEP_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_X931) == 0)
-		return RSA_X931_PADDING;
-	if (strcmp(padding, OSSL_PKEY_RSA_PAD_MODE_PSS) == 0)
-		return RSA_PKCS1_PSS_PADDING;
-
-	return -1;
-}
-
 /**
  * Builds an DER encoded signature from a raw signature.
  *
@@ -263,7 +247,6 @@ void fwd_teardown(struct ossl_provider *fwd)
 }
 
 int fwd_init(struct ossl_provider *fwd, const char *fwd_name,
-	     const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in,
 	     OSSL_LIB_CTX *libctx, struct dbg *dbg)
 {
 	if (!fwd || !fwd_name || !libctx || !dbg)

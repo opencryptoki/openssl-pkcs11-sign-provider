@@ -58,7 +58,6 @@ func_t fwd_sign_get_func(struct ossl_provider *fwd, int pkey_type,
 
 void fwd_teardown(struct ossl_provider *fwd);
 int fwd_init(struct ossl_provider *fwd, const char *fwd_name,
-	     const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in,
 	     OSSL_LIB_CTX *libctx, struct dbg *dbg);
 
 void core_teardown(struct ossl_core *core);

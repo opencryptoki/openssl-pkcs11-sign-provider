@@ -285,7 +285,7 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 	if (strncmp(fwd, "provider=", strlen("provider=")) == 0)
 		fwd += strlen("provider=");
 
-	if (fwd_init(&pctx->fwd, fwd, handle, in, pctx->core.libctx,
+	if (fwd_init(&pctx->fwd, fwd, pctx->core.libctx,
 		     &pctx->dbg) != OSSL_RV_OK) {
 		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
 			       "Failed to initialize forward %s", fwd);
