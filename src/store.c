@@ -76,7 +76,7 @@ static int object2params(struct obj *obj, OSSL_PARAM *params, unsigned int npara
 	}
 }
 
-static int get_object_params(struct store_ctx *sctx, struct obj *obj)
+static int get_object_params(struct obj *obj)
 {
 	CK_KEY_TYPE type;
 
@@ -264,7 +264,7 @@ static int load_object_handles(struct store_ctx *sctx,
 			goto err;
 		}
 
-		if (get_object_params(sctx, objs[i]) != OSSL_RV_OK) {
+		if (get_object_params(objs[i]) != OSSL_RV_OK) {
 			ps_dbg_error(dbg, "sctx: %p, params lookup failed (handle: %lu)",
 				     sctx, handles[i]);
 			goto err;
