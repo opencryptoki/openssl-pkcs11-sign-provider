@@ -28,7 +28,6 @@ PKG_CHECK_MODULES(
 )
 
 # Compile flags
-CFLAGS="-g -Og"
 AX_CHECK_COMPILE_FLAG(
 	[-std=c99],
 	[CFLAGS="$CFLAGS -std=c99"],
