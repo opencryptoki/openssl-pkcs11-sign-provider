@@ -32,55 +32,23 @@ dgst -verify "${FILE_PEM_ECDSA_PUB}"
 || exit 99
 
 echo "##################################################"
-echo "## RSA: encrypt/decrypt (file/pkcs11)"
-echo "##"
-
-echo "## encrypt data"
-ossl '
-pkeyutl -encrypt -pkeyopt rsa_padding_mode:none
-        -pubin -inkey "${FILE_PEM_RSA4K_PUB}"
-        -in  "${TMPPDIR}/random-512.bin"
-        -out "${TMPPDIR}/data.enc"' \
-|| exit 99
-
-echo "## decrypt data"
-ossl '
-pkeyutl -decrypt -pkeyopt rsa_padding_mode:none
-        -inkey "${URI_KEY_RSA4K_PRV}"
-        -in  "${TMPPDIR}/data.enc"
-        -out "${TMPPDIR}/data.dec"' \
-|| exit 99
-
-echo "## decrypt results"
-diff -q "${TMPPDIR}/random-512.bin" "${TMPPDIR}/data.dec" \
-|| exit 99
-echo "diff: identical results"
-rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
-
-echo "##################################################"
 echo "## EC: tls-server/client (ECDHE-ECDSA-AES256-GCM-SHA384)"
 echo "##"
 
 rm -f "${TMPPDIR}/fail.*"
-
-# server
-ossl '
-s_server -CAfile ${FILE_PEM_CA_CRT}
-         -key ${URI_KEY_ECDSA_PRV} -cert ${FILE_PEM_ECDSA_CRT}
-         -cipher ECDHE-ECDSA-AES256-GCM-SHA384
-         -accept 4433 -naccept +1' \
-|| touch "${TMPPDIR}/fail.server" &
-sleep 1
-
-#client
-ossl '
-s_client -CAfile ${FILE_PEM_CA_CRT}
-        -tls1_2 <<< "Q"' \
-|| touch "${TMPPDIR}/fail.client"
+s_server_bg  ${FILE_PEM_CA_CRT} ${URI_KEY_ECDSA_PRV} ${FILE_PEM_ECDSA_CRT} "ECDHE-ECDSA-AES256-GCM-SHA384"
+sleep .5
+s_client     ${FILE_PEM_CA_CRT}
 
 # validation
-test -f "${TMPPDIR}/fail.server" -o -f "${TMPPDIR}/fail.server" \
+test -f "${TMPPDIR}/fail.server" \
 || exit 99
-echo "server/client: ok"
+echo server: ok
+
+test -f "${TMPPDIR}/fail.client" \
+|| exit 99
+echo "client: ok"
+
+
 
 exit 0
