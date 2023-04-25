@@ -160,6 +160,7 @@ int main(void)
 	EVP_PKEY_free(vpkey);
 	EVP_MD_CTX_free(sctx);
 	EVP_MD_CTX_free(vctx);
+	OPENSSL_free(sig);
 
 	return 0;
 }
