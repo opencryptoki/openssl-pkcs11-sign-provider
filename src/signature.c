@@ -557,8 +557,13 @@ static int ps_signature_op_sign_init(void *vopctx, void *vkey,
 		return OSSL_RV_ERR;
 	}
 
+	if (ps_signature_op_sign_init_fwd(opctx, key, params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
+		return OSSL_RV_ERR;
+	}
+
 	if (!key->use_pkcs11)
-		return ps_signature_op_sign_init_fwd(opctx, key, params);
+		return OSSL_RV_OK;
 
 	opctx->mech = *mech;
 
@@ -704,8 +709,11 @@ static int ps_signature_op_verify_init(void *vopctx, void *vkey,
 		return OSSL_RV_ERR;
 	}
 
+	if (ps_signature_op_verify_init_fwd(opctx, key, params) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
 	if (!key->use_pkcs11)
-		return ps_signature_op_verify_init_fwd(opctx, key, params);
+		return OSSL_RV_OK;
 
 	/* TODO implementation for pkcs11 */
 	return OSSL_RV_ERR;
@@ -760,9 +768,12 @@ static int ps_signature_op_verify_recover_init(void *vopctx, void *vkey,
 		return OSSL_RV_ERR;
 	}
 
+	if (ps_signature_op_verify_recover_init_fwd(opctx, key,
+						    params) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
 	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_verify_recover_init_fwd(opctx, key,
-							       params);
+		return OSSL_RV_OK;
 
 	/* TODO implementation for pkcs11 */
 	return OSSL_RV_ERR;
@@ -916,9 +927,12 @@ static int ps_signature_op_digest_sign_init(struct op_ctx *opctx,
 		return OSSL_RV_ERR;
 	}
 
+	if (ps_signature_op_digest_sign_init_fwd(opctx, mdname,
+						 key, params) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
 	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_digest_sign_init_fwd(opctx, mdname,
-							    key, params);
+		return OSSL_RV_OK;
 
 	opctx->mech = *mech;
 
@@ -1173,8 +1187,13 @@ static int ps_signature_op_digest_verify_init(void *vctx,
 		return OSSL_RV_ERR;
 	}
 
+	if (ps_signature_op_digest_verify_init_fwd(opctx, mdname,
+						   opctx->key,
+						   params) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
 	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_digest_verify_init_fwd(opctx, mdname, opctx->key->fwd_key, params);
+		return OSSL_RV_OK;
 
 	/* not supported for pkcs11 */
 	return OSSL_RV_ERR;
