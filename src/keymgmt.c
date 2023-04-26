@@ -566,12 +566,13 @@ static int ps_keymgmt_export(void *vkey, int selection,
 	ps_obj_debug(key, "key: %p selection: %d",
 		     key, selection);
 
-	if (!key->use_pkcs11)
-		return ps_keymgmt_export_fwd(key, selection,
-					     param_callback, cbarg);
+	if (ps_keymgmt_export_fwd(key, selection,
+				  param_callback, cbarg) != OSSL_RV_OK) {
+		ps_obj_debug(key, "ps_keymgmt_export_fwd() failed");
+		return OSSL_RV_ERR;
+	}
 
-	/* not supported */
-	return OSSL_RV_ERR;
+	return OSSL_RV_OK;
 }
 
 static int ps_keymgmt_import_fwd(struct obj *key, int selection,
