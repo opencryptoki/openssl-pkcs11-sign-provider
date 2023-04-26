@@ -12,6 +12,10 @@
 #include <openssl/ec.h>
 #include <openssl/x509v3.h>
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include "common.h"
 #include "provider.h"
 #include "ossl.h"
@@ -250,6 +254,10 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 
 	if (provider_ctx_init(pctx) != OSSL_RV_OK)
 		goto err;
+	ps_dbg_info(&pctx->dbg, "provider: %s", PS_PROV_NAME);
+#ifdef HAVE_CONFIG_H
+	ps_dbg_info(&pctx->dbg, "version: %s", PACKAGE_VERSION);
+#endif
 
 	if (core_init(&pctx->core, handle, in, &pctx->dbg) != OSSL_RV_OK) {
 		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
