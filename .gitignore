@@ -14,6 +14,9 @@ tests/tecdhe
 *.log
 *.trs
 
+# Distribution pattern
+/*-?.?.?.tar.gz
+
 # common ignore-patterns
 # Prerequisites
 *.d
