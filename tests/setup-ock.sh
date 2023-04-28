@@ -128,7 +128,7 @@ OPENSSL_CONF=${TMPPDIR}/pkcs11sign.cnf
 sed -e "s|@libtoollibs[@]|${LIBSPATH}|g" \
     -e "s|@pkcs11modulepath[@]|libopencryptoki.so|g" \
     -e "/pkcs11sign-module-init-args.*$/d" \
-        "${TESTSDIR}/pkcs11sign.cnf.in" > ${OPENSSL_CONF} \
+        "${TESTSDIR}/../openssl.cnf.in" > ${OPENSSL_CONF} \
 || exit 99
 
 #######################################

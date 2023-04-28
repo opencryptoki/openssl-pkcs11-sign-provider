@@ -6,6 +6,7 @@
 /libltdl
 /build-aux
 *~
+*.sample
 tests/tmp.*
 tests/ttls
 tests/tsignature

@@ -1,8 +1,6 @@
 # Copyright (C) 2022 IBM Corp.
 # SPDX-License-Identifier: Apache-2.0
 
-EXTRA_DIST = pkcs11sign.cnf.in
-
 libspath=@abs_top_builddir@/src/.libs
 testsdir=@abs_srcdir@
 
