@@ -5,41 +5,35 @@
  *          Ingo Franzki <ifranzki@linux.ibm.com>
  */
 
-#include <openssl/evp.h>
-#include <openssl/pem.h>
-#include <openssl/sha.h>
 #include <openssl/bn.h>
+#include <openssl/core.h>
+#include <openssl/core_dispatch.h>
+#include <openssl/core_names.h>
+#include <openssl/decoder.h>
 #include <openssl/ec.h>
+#include <openssl/evp.h>
+#include <openssl/param_build.h>
+#include <openssl/params.h>
+#include <openssl/pem.h>
+#include <openssl/provider.h>
+#include <openssl/sha.h>
 #include <openssl/x509v3.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
+#include "asym.h"
 #include "common.h"
-#include "provider.h"
+#include "debug.h"
+#include "keyexch.h"
+#include "keymgmt.h"
+#include "object.h"
 #include "ossl.h"
 #include "pkcs11.h"
-#include "store.h"
-#include "debug.h"
-#include "object.h"
-#include "keymgmt.h"
+#include "provider.h"
 #include "signature.h"
-#include "asym.h"
-#include "keyexch.h"
-
-/*
- * This source file is only used with OpenSSL >= 3.0
- */
-#if OPENSSL_VERSION_PREREQ(3, 0)
-
-#include <openssl/provider.h>
-#include <openssl/core.h>
-#include <openssl/core_dispatch.h>
-#include <openssl/core_names.h>
-#include <openssl/params.h>
-#include "openssl/param_build.h"
-#include <openssl/decoder.h>
+#include "store.h"
 
 #define PS_PROV_DESCRIPTION	"PKCS11 signing key provider"
 #define PS_PROV_VERSION		"0.1"
@@ -234,10 +228,10 @@ static const OSSL_DISPATCH ps_dispatch_table[] = {
 	{ 0, NULL }
 };
 
-int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
-		       const OSSL_DISPATCH *in,
-		       const OSSL_DISPATCH **out,
-		       void **vctx)
+static int ps_prov_init(const OSSL_CORE_HANDLE *handle,
+			const OSSL_DISPATCH *in,
+			const OSSL_DISPATCH **out,
+			void **vctx)
 {
 	struct provider_ctx *pctx = NULL;
 	OSSL_PARAM core_params[4] = { 0 };
@@ -319,4 +313,10 @@ err:
 	return OSSL_RV_ERR;
 }
 
-#endif
+int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
+		       const OSSL_DISPATCH *in,
+		       const OSSL_DISPATCH **out,
+		       void **vctx)
+{
+	return ps_prov_init(handle, in, out, vctx);
+}

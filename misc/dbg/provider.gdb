@@ -1,4 +1,5 @@
 set breakpoint pending on
+break ps_prov_init
 break ps_prov_teardown
 break ps_prov_gettable_params
 break ps_prov_get_params
