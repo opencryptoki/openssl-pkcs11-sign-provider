@@ -3,4 +3,5 @@
 
 dist_man_MANS = pkcs11sign.7 pkcs11sign.cnf.5
 
+DISTCLEANFILES = *~
 MAINTAINERCLEANFILES = Makefile.in

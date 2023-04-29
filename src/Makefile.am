@@ -31,4 +31,5 @@ pkcs11sign_la_LDFLAGS = \
 	-avoid-version \
 	-export-symbols "$(srcdir)/provider.exports"
 
+DISTCLEANFILES = *~
 MAINTAINERCLEANFILES = Makefile.in

@@ -19,6 +19,7 @@ tecdhe_CFLAGS = $(AM_CFLAGS) $(STD_CFLAGS) $(OPENSSL_CFLAGS)
 tecdhe_LDADD = $(OPENSSL_LIBS)
 
 setup_scripts =
+setup_scripts += helpers.sh
 setup_scripts += setup-ock.sh
 
 tmp.ock:
