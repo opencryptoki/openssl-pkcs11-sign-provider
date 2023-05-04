@@ -1,17 +1,15 @@
 # Copyright (C) 2022 IBM Corp.
 # SPDX-License-Identifier: Apache-2.0
-
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
-AC_PREREQ([2.69])
+
+AC_PREREQ([2.71])
 AC_INIT([openssl-pkcs11-sign-provider],
 	[0.0.1],
-	[https://github.com/opencryptoki/openssl-pkcs11-sign-provider/issues],
-	,
-	[https://github.com/opencryptoki/openssl-pkcs11-sign-provider]
+	[https://github.com/opencryptoki/openssl-pkcs11-sign-provider/issues]
 )
 
-AC_CONFIG_SRCDIR([src/provider.c])
+AC_CONFIG_SRCDIR([config.h.in])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIRS([m4])
 
@@ -19,8 +17,13 @@ AM_INIT_AUTOMAKE([foreign])
 AM_SILENT_RULES([yes])
 
 # Checks for programs.
+AC_PROG_CXX
+AC_PROG_AWK
 AC_PROG_CC
-AM_PROG_AR
+AC_PROG_CPP
+AC_PROG_INSTALL
+AC_PROG_LN_S
+AC_PROG_MAKE_SET
 LT_INIT([shared disable-static])
 PKG_PROG_PKG_CONFIG
 
@@ -30,6 +33,17 @@ PKG_CHECK_MODULES(
 	,
 	[AC_MSG_ERROR([libcrypto >= 3.0.8 is required])]
 )
+
+# Checks for header files.
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_CHECK_HEADER_STDBOOL
+AC_C_INLINE
+AC_C_RESTRICT
+AC_TYPE_SIZE_T
+
+# Checks for library functions.
+AC_CHECK_FUNCS([memset strchr strtoul])
 
 # Compile flags
 AX_CHECK_COMPILE_FLAG(
