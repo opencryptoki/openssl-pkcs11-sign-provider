@@ -49,6 +49,31 @@ test -f "${TMPPDIR}/fail.client" \
 || exit 99
 echo "client: ok"
 
+echo "##################################################"
+echo "## RSA: encrypt/decrypt (file/pkcs11)"
+echo "##"
+
+echo "## encrypt data"
+ossl '
+pkeyutl -encrypt -pkeyopt rsa_padding_mode:none
+        -pubin -inkey "${FILE_PEM_RSA4K_PUB}"
+        -in  "${TMPPDIR}/random-512.bin"
+        -out "${TMPPDIR}/data.enc"' \
+|| exit 99
+
+echo "## decrypt data"
+ossl '
+pkeyutl -decrypt -pkeyopt rsa_padding_mode:none
+        -inkey "${URI_KEY_RSA4K_PRV}"
+        -in  "${TMPPDIR}/data.enc"
+        -out "${TMPPDIR}/data.dec"' \
+|| exit 99
+
+echo "## compare clear-text results"
+diff -q "${TMPPDIR}/random-512.bin" "${TMPPDIR}/data.dec" \
+|| exit 99
+echo "diff: identical results"
+rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
 
 
 exit 0
