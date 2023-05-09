@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 test -z "${TESTSDIR}" && exit 77
-source "${TESTSDIR}/helpers.sh"
+source "${TESTSDIR}/helpers.sh" || exit 1
 echo "set breakpoint pending on" > "${TMPPDIR}/ossl.gdb"
 
 echo "##################################################"
@@ -35,19 +35,43 @@ echo "##################################################"
 echo "## EC: tls-server/client (ECDHE-ECDSA-AES256-GCM-SHA384)"
 echo "##"
 
-rm -f "${TMPPDIR}/fail.*"
-s_server_bg  ${FILE_PEM_CA_CRT} ${URI_KEY_ECDSA_PRV} ${FILE_PEM_ECDSA_CRT} "ECDHE-ECDSA-AES256-GCM-SHA384"
-sleep .5
-s_client     ${FILE_PEM_CA_CRT}
+ossl '
+s_server -brief -CAfile ${FILE_PEM_CA_CRT}
+         -key ${URI_KEY_ECDSA_PRV}
+         -cert ${FILE_PEM_ECDSA_CRT}
+         -cipher ECDHE-ECDSA-AES256-GCM-SHA384
+         -www -accept localhost:4433 -naccept +1' \
+2> "${TMPPDIR}/server.log" &
 
-# validation
-test -f "${TMPPDIR}/fail.server" \
-|| exit 99
-echo server: ok
+# wait for server start
+sleep 1
 
-test -f "${TMPPDIR}/fail.client" \
-|| exit 99
+echo "Q" | \
+ossl '
+s_client -brief -CAfile ${FILE_PEM_CA_CRT}
+         -connect localhost:4433
+         -tls1_2' \
+2> "${TMPPDIR}/client.log"
+
+if [ $? -ne 0 ]; then
+  echo "client failed"
+  echo "log start -------------"
+  cat "${TMPPDIR}/client.log"
+  echo "log end ---------------"
+  exit 99
+fi
 echo "client: ok"
+
+# get server status
+wait $!
+if [ $? -ne 0 ]; then
+  echo "server failed"
+  echo "log start -------------"
+  cat "${TMPPDIR}/server.log"
+  echo "log end ---------------"
+  exit 99
+fi
+echo server: ok
 
 echo "##################################################"
 echo "## RSA: encrypt/decrypt (file/pkcs11)"

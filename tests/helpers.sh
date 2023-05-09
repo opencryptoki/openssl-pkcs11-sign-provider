@@ -146,29 +146,3 @@ ossl() {
 	echo openssl $*
 	eval openssl $1
 }
-
-s_server () {
-	local CA_CRT=$1
-	local SRV_PRV=$2
-	local SRV_CRT=$3
-	local SRV_CIPHER=$4
-
-	ossl '
-	s_server -CAfile ${CA_CRT}
-	         -key ${SRV_PRV} -cert ${SRV_CRT}
-	         -cipher ${SRV_CIPH}
-	         -accept 4433 -naccept +1' \
-	|| touch "${TMPPDIR}/fail.server"
-}
-s_server_bg () {
-	s_server $@ &
-}
-
-s_client () {
-	local CA_CRT=$1
-
-	ossl '
-	s_client -CAfile ${CA_CRT}
-	        -tls1_2 <<< "Q"' \
-	|| touch "${TMPPDIR}/fail.client"
-}
