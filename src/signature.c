@@ -35,31 +35,37 @@ static int op_ctx_signature_size(struct op_ctx *opctx, size_t *siglen)
 		return OSSL_RV_ERR;
 	}
 
-	rawsig = OPENSSL_malloc(rawsiglen);
-	if (!rawsig) {
-		ps_opctx_debug(opctx, "ERROR: cannot alloc dummy buffer");
+	switch (opctx->type) {
+	case EVP_PKEY_EC:
+		rawsig = OPENSSL_malloc(rawsiglen);
+		if (!rawsig) {
+			ps_opctx_debug(opctx, "ERROR: cannot alloc dummy buffer");
+			return OSSL_RV_ERR;
+		}
+
+		/*
+		 * HACK: the length of OPENSSL ecdsa signatures depends on its content.
+		 * Filling the dummy buffer with 0xff cause the convertion to return
+		 * the maximum length.
+		 */
+		memset(rawsig, 0xff, rawsiglen);
+
+		if (ossl_ecdsa_signature(rawsig, rawsiglen, NULL, &len) != OSSL_RV_OK) {
+			ps_opctx_debug(opctx, "ERROR: ossl_build_ecdsa_signature() failed");
+			OPENSSL_free(rawsig);
+			return OSSL_RV_ERR;
+		}
+		OPENSSL_free(rawsig);
+		break;
+	case EVP_PKEY_RSA:
+		len = rawsiglen;
+		break;
+	default:
 		return OSSL_RV_ERR;
 	}
 
-	/*
-	 * HACK: the length of OPENSSL ecdsa signatures depends on its content.
-	 * Filling the dummy buffer with 0xff cause the convertion to return
-	 * the maximum length.
-	 */
-	memset(rawsig, 0xff, rawsiglen);
-
-	if (ossl_ecdsa_signature(rawsig, rawsiglen, NULL, &len) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: ossl_build_ecdsa_signature() failed");
-		goto err;
-	}
-
 	*siglen = len;
-	OPENSSL_free(rawsig);
 	return OSSL_RV_OK;
-
-err:
-	OPENSSL_free(rawsig);
-	return OSSL_RV_ERR;
 }
 
 static int signature_op_ctx_new_fwd(struct op_ctx *opctx)
@@ -1120,14 +1126,20 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 		return OSSL_RV_ERR;
 	}
 
-	ps_opctx_debug(opctx, "raw signature: [%p, %lu]",
-		       sig, raw_siglen);
-	ps_dbg_debug_dump(&opctx->pctx->dbg,
-			  sig, raw_siglen);
+	switch (opctx->type) {
+	case EVP_PKEY_EC:
+		ps_opctx_debug(opctx, "raw signature: [%p, %lu]",
+			       sig, raw_siglen);
+		ps_dbg_debug_dump(&opctx->pctx->dbg,
+				  sig, raw_siglen);
 
-	if (ossl_ecdsa_signature(sig, raw_siglen, sig, siglen) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: ossl_build_ecdsa_signature() failed");
-		return OSSL_RV_ERR;
+		if (ossl_ecdsa_signature(sig, raw_siglen, sig, siglen) != OSSL_RV_OK) {
+			ps_opctx_debug(opctx, "ERROR: ossl_build_ecdsa_signature() failed");
+			return OSSL_RV_ERR;
+		}
+		break;
+	default:
+		*siglen = raw_siglen;
 	}
 
 	ps_opctx_debug(opctx, "signature: [%p, %lu]",
