@@ -4,6 +4,7 @@
  */
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/store.h>
@@ -99,35 +100,25 @@ static void verify_msg(EVP_MD_CTX *ctx, const char *msg, size_t msglen,
 	}
 }
 
-int main(void)
+void sign_verify(const char *priv, const char *cert, bool debug)
 {
-	const char *priv, *cert, *msg = "test message for sign/verify";
+	const char *msg = "test message for sign/verify";
 	EVP_MD_CTX *sctx = NULL, *vctx = NULL;
 	unsigned char *sig;
 	EVP_PKEY *spkey, *vpkey;
 	size_t len, siglen;
 
-	info();
-
-	/* get all required env valiables */
-	priv = getenv("URI_KEY_ECDSA_PRV");
-	// priv = getenv("FILE_PEM_ECDSA_PRV");
-	cert = getenv("FILE_PEM_ECDSA_CRT");
-
-	if (!priv || !cert)
-		exit(EXIT_SKIP);
-
 	/* sign */
 	sctx = create_context();
-	fprintf(stderr, "pass: signature context creation\n");
+	if (debug) fprintf(stderr, "pass: signature context creation\n");
 
 	spkey = uri_pkey_get1(priv);
-	fprintf(stderr, "pass: pkey load for signing [uri: %s, spkey: %p]\n",
-		priv, spkey);
+	if (debug) fprintf(stderr, "pass: pkey load for signing [uri: %s, spkey: %p]\n",
+			   priv, spkey);
 
 	configure_sign_context(sctx, spkey, priv);
-	fprintf(stderr, "pass: signature context configuration [uri: %s]\n",
-		priv);
+	if (debug) fprintf(stderr, "pass: signature context configuration [uri: %s]\n",
+			   priv);
 
 	siglen = sign_get_length(sctx);
 	sig = OPENSSL_zalloc(siglen);
@@ -135,32 +126,71 @@ int main(void)
 		exit(EXIT_FAILURE);
 
 	sign_msg(sctx, msg, strlen(msg), sig, siglen, &len);
-	fprintf(stderr, "pass: message signing [uri: %s, len: %lu]\n",
-		priv, len);
+	if (debug) fprintf(stderr, "pass: message signing [uri: %s, len: %lu]\n",
+			   priv, len);
 
-	fdump(stderr, sig, len);
+	if (debug) fdump(stderr, sig, len);
 
 	/* verify */
 	vctx = create_context();
-	fprintf(stderr, "pass: verify context creation\n");
+	if (debug) fprintf(stderr, "pass: verify context creation\n");
 
 	vpkey = uri_pkey_get1(cert);
-	fprintf(stderr, "pass: pkey load for verify [uri: %s, vpkey: %p]\n",
-		cert, vpkey);
+	if (debug) fprintf(stderr, "pass: pkey load for verify [uri: %s, vpkey: %p]\n",
+			   cert, vpkey);
 
 	configure_verify_context(vctx, vpkey, cert);
-	fprintf(stderr, "pass: verify context configuration [uri: %s]\n",
-		cert);
+	if (debug) fprintf(stderr, "pass: verify context configuration [uri: %s]\n",
+			   cert);
 
 	verify_msg(vctx, msg, strlen(msg), sig, len);
-	fprintf(stderr, "pass: message verification [uri: %s]\n",
-		cert);
+	if (debug) fprintf(stderr, "pass: message verification [uri: %s]\n",
+			   cert);
 
 	EVP_PKEY_free(spkey);
 	EVP_PKEY_free(vpkey);
 	EVP_MD_CTX_free(sctx);
 	EVP_MD_CTX_free(vctx);
 	OPENSSL_free(sig);
+}
+
+static char *test_keys[][2] = {
+	/* ecdsa */
+	{ "FILE_PEM_ECDSA_PRV", "FILE_PEM_ECDSA_CRT"},
+	{ "URI_KEY_ECDSA_PRV", "FILE_PEM_ECDSA_CRT"},
+};
+
+int main(void)
+{
+	size_t i, nelem;
+	bool debug;
+
+	debug = (getenv("PKCS11SIGN_DEBUG")) ? true : false;
+	if (debug) info();
+
+	nelem = sizeof(test_keys) / sizeof(test_keys[0]);
+	for (i = 0; i < nelem; i++) {
+		char *env_p, *env_c, *priv, *cert;
+
+		env_p = test_keys[i][0];
+		env_c = test_keys[i][1];
+
+		if (!env_p || !env_c)
+			break;
+
+		priv = getenv(env_p);
+		cert = getenv(env_c);
+
+		if (!priv || !cert) {
+			fprintf(stderr, "skip: [%ld] sign/verify with %s/%s\n",
+				i, env_p, env_c);
+			continue;
+		}
+
+		sign_verify(priv, cert, debug);
+		fprintf(stderr, "pass: [%ld] sign/verify with %s/%s\n",
+			i, env_p, env_c);
+	}
 
 	return 0;
 }
