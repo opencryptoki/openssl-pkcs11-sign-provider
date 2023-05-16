@@ -158,6 +158,9 @@ static char *test_keys[][2] = {
 	/* ecdsa */
 	{ "FILE_PEM_ECDSA_PRV", "FILE_PEM_ECDSA_CRT"},
 	{ "URI_KEY_ECDSA_PRV", "FILE_PEM_ECDSA_CRT"},
+	/* rsa */
+	{ "FILE_PEM_RSA4K_PRV", "FILE_PEM_RSA4K_CRT"},
+	{ "URI_KEY_RSA4K_PRV", "FILE_PEM_RSA4K_CRT"},
 };
 
 int main(void)
