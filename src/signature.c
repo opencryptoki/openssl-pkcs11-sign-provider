@@ -1071,10 +1071,10 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 					     unsigned char *sig, size_t *siglen,
 					     size_t sigsize)
 {
-	unsigned char digest[EVP_MAX_MD_SIZE];
+	unsigned char tbs[DER_DIGESTINFO_MAX + EVP_MAX_MD_SIZE], *digest;
 	struct op_ctx *opctx = vopctx;
 	size_t raw_siglen;
-	unsigned int dlen = 0;
+	unsigned int tbslen = 0, dlen = 0;
 
 	if (!opctx || !siglen)
 		return OSSL_RV_ERR;
@@ -1101,6 +1101,20 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 	if (!sig)
 		return op_ctx_signature_size(opctx, siglen);
 
+	switch (opctx->type) {
+	case EVP_PKEY_RSA:
+		/* prefix hash with DER-encoded algo */
+		if ((opctx->mech.mechanism == CKM_RSA_PKCS) &&
+		    (ossl_hash_prefix(opctx->mdctx, tbs, &tbslen) != OSSL_RV_OK))
+			return OSSL_RV_ERR;
+		digest = tbs + tbslen;
+		break;
+	default:
+		/* no extra padding */
+		digest = tbs;
+		break;
+	}
+
 	if (EVP_DigestFinal_ex(opctx->mdctx, digest, &dlen) != OSSL_RV_OK) {
 		ps_opctx_debug(opctx, "ERROR: EVP_DigestFinal_ex failed");
 		return OSSL_RV_ERR;
@@ -1118,9 +1132,10 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 		return OSSL_RV_ERR;
 	}
 
+	tbslen += dlen;
 	raw_siglen = sigsize;
 	if (pkcs11_sign(opctx->pctx->pkcs11, opctx->hsession,
-			digest, dlen, sig, &raw_siglen,
+			tbs, tbslen, sig, &raw_siglen,
 			&opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
 		return OSSL_RV_ERR;
