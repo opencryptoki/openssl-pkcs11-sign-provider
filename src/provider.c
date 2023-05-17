@@ -19,10 +19,6 @@
 #include <openssl/sha.h>
 #include <openssl/x509v3.h>
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
 #include "asym.h"
 #include "common.h"
 #include "debug.h"
@@ -36,7 +32,12 @@
 #include "store.h"
 
 #define PS_PROV_DESCRIPTION	"PKCS11 signing key provider"
-#define PS_PROV_VERSION		"0.1"
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#define PS_PROV_VERSION		PACKAGE_VERSION
+#else
+#define PS_PROV_VERSION		"n/a"
+#endif
 
 #define PS_PKCS11_MODULE_PATH			"pkcs11sign-module-path"
 #define PS_PKCS11_MODULE_INIT_ARGS		"pkcs11sign-module-init-args"
