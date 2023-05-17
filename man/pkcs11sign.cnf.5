@@ -1,17 +1,150 @@
-.TH PKCS11SIGN.CNF 5 "2022-11-21" "pkcs11sign"
+.TH PKCS11SIGN.CNF 5 "2023-05-17" "pkcs11sign.cnf"
 .SH NAME
-pkcs11sign.cnf \- OpenSSL configuration for provider library for PKCS#11 signing keys
+pkcs11sign.cnf \- Configuration for OpenSSL PKCS#11 sign provider module
 .PP
 
-.SH Description
-The pkcs11sign Library is a OpenSSL provider ...
+.SH DESCRIPTION
+The pkcs11-sign-provider implements the OpenSSL 3.0 provider interface and
+provides cryptographic operation on asymmetric key material, available in
+PKCS#11 infrastructure (e.g. opencryptoki). For more information see
+pkcs11sign(7).
+.PP
+
+.SH CONFIGURATION
+.SS OpenSSL Configuration
+The pkcs11-sign-provider can be configured application-specific or
+system-wide. In both cases, the configuration file need to define and
+reference a section for the pkcs11-sign-provider, following the OpenSSL
+configuration syntax (config(5)).
+.PP
+The pkcs11-sign-provider section specifies the shared library of the
+provider itself (mandatory), the shared library of the Cryptoki
+implementation (mandatory) and initialization parameters for the Cryptoki
+implementation (optional). It is also possible to specify a forward
+provider. If no forward provider is specified, the OpenSSL built-in
+default-provider is selected.
+.PP
+The pkcs11-sign-provider must also be preferred in the algorithm-properties,
+so that all requests are directed to the pkcs11-sign-provider. This can
+either be done in the application or in the configuration file
+(recommended).
+.PP
+
+.SS Provider Section
+A provider section in the OpenSSL configuration define generic parameters,
+as well as provider-specific parameters. Each provider section can be
+references in a providers sections.
+The pkcs11-sign-provider requires at least the generic provider section
+parameters
+.IR module ,
+.IR identity ", and"
+.IR activate .
+For more details about the generic provider parameters, see config(5).
+.PP
+.TP
+.BR module " (mandatory)
+This parameter takes a path to the provider shared object file. For
+the pkcs11-sign-provider, use the path to the installation location of
+.I pkcs11sign.so
+(provider shared object).
+.TP
+.BR identity " (optional)"
+This parameter specifies an alias name for the provider and
+overrides the provider name in the providers section. It is recommended to
+use the same name as in the providers.
+.TP
+.BR activate " (optional)"
+If present, this parameter activates the provider section.
+.PP
+The pkcs11-sign-provider defines the provider specific parameters
+.IR pkcs11sign-module-path ,
+.IR pkcs11sign-module-init-args ", and"
+.IR pkcs11sign-forward .
+.TP
+.BR pkcs11sign-module-path " (mandatory)"
+This parameter takes the path to the shared object file of a PKCS#11
+Cryptoki module implementation. The provider can be used with PKCS#11
+Cryptoki modules, implementing the PKCS#11 standard version 3.0 (or
+compatible).
+.TP
+.BR pkcs11sign-module-init-args " (optional)"
+The pkcs11sign-module-init-args takes a parameter string, which is used
+during the initialization of the Cryptoki module.
+.PP
+.TP
+.BR pkcs11sign-forward " (optional)"
+The pkcs11sign-forward parameter takes the name of a provider, to which all
+operations are forwarded, which are not handled by the pkcs11-sign-provider
+itself, e.g. key derivation for ECDHE. If this parameter is not specified in
+the provider section, the pkcs11-sign-provider will use the built-in OpenSSL
+default provider as forward.
+.IP
+The syntax for this parameter is "provider=<name_of_forward_provider>". See
+the configuration example for more details.
+.PP
+
+.SS EVP Configuration (alg_section)
+This section configures the algorithmic properties for the EVP API. The
+pkcs11-sign-provider should be set as the preferred provider for all EVP
+algorithms by adding the
+.I default_properties
+the expresstion "?provider=pkcs11sign".
+.PP
+
+.SS Configuration example
+This configuration example shows
+.in +4n
+.EX
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+alg_section = evp_properties
+
+[provider_sect]
+default = default_sect
+base = base_sect
+pkcs11sign = pkcs11sign_sect
+
+[evp_properties]
+default_properties = ?provider=pkcs11sign
+
+[pkcs11sign_sect]
+module = /path/to/pkcs11sign.so
+identity = pkcs11sign
+pkcs11sign-module-path = /path/to/libopencryptoki.so.0
+pkcs11sign-forward = provider=default
+activate = 1
+.EE
+.in
+.PP
+
+.SH ENVIRONMENT
+The pkcs11-sign-provider allows to generate a detailed log-file. The
+log-file generation can be enabled by setting the environment variable
+.IR PKCS11SIGN_DEBUG
+and
+.IR PKCS11SIGN_DEBUG_LEVEL .
+The internal logging is disabled, until the environment variables are set.
+.TP
+.B PKCS11SIGN_DEBUG
+This variable specifies the path to the log-file. If specified, it will
+enable the logging. The pkcs11-sign-provider will override an existing file
+in this location.
+.TP
+.B PKCS11SIGN_DEBUG_LEVEL
+This variable specifies the debugging level. Supported values are
+.IR error " (0),"
+.IR warning " (1),"
+.IR info " (2), and"
+.IR debug " (3)."
 .PP
 
 .SH SEE ALSO
-.PD 0
-.TP
-\fBpkcs11sign\fP(7)
-.PD
+.BR config (5),
+.BR pkcs11sign (7)
+.PP
 
-.SH Copyright \(co International Business Machines Corp. 2022
+.SH Copyright
+Copyright \(co International Business Machines Corp. 2022, 2023
 .PP
