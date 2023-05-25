@@ -25,9 +25,9 @@ const OSSL_ITEM ps_prov_reason_strings[] = {
 	{ PS_ERR_INVALID_PARAM,
 		"Invalid parameter encountered" },
 	{ PS_ERR_DEFAULT_PROV_FUNC_MISSING,
-		"A function inherited from default provider is missing" },
+		"A function inherited from forward provider is missing" },
 	{ PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-		"A function inherited from default provider has failed" },
+		"A function inherited from forward provider has failed" },
 	{ PS_ERR_OPRATION_NOT_INITIALIZED,
 		"An operation context has not been initialized" },
 	{ PS_ERR_MISSING_PARAMETER,
@@ -219,8 +219,8 @@ static func_t fwd_get_func(struct ossl_provider *fwd, int operation_id,
 		    const char *algorithm, int function_id,
 		    struct dbg *dbg)
 {
-	const OSSL_ALGORITHM *default_algos, *algs;
-	const OSSL_DISPATCH *default_impl, *impl;
+	const OSSL_ALGORITHM *fwd_algos, *algs;
+	const OSSL_DISPATCH *fwd_impl, *impl;
 	int algolen = strlen(algorithm);
 	int no_cache = 0, query = 0;
 	func_t func = NULL;
@@ -233,15 +233,15 @@ static func_t fwd_get_func(struct ossl_provider *fwd, int operation_id,
 	ps_dbg_debug(dbg, "operation_id: %d, algo: %s, func: %d",
 		     operation_id, algorithm, function_id);
 
-	default_algos = fwd->alg_cache[operation_id];
-	if (default_algos == NULL) {
-		default_algos = OSSL_PROVIDER_query_operation(
+	fwd_algos = fwd->alg_cache[operation_id];
+	if (fwd_algos == NULL) {
+		fwd_algos = OSSL_PROVIDER_query_operation(
 				fwd->provider,
 				operation_id, &no_cache);
 		query = 1;
 	}
 
-	for (algs = default_algos; algs != NULL &&
+	for (algs = fwd_algos; algs != NULL &&
 				   algs->algorithm_names != NULL; algs++) {
 		found = strcasestr(algs->algorithm_names, algorithm);
 		if (found == NULL)
@@ -251,8 +251,8 @@ static func_t fwd_get_func(struct ossl_provider *fwd, int operation_id,
 		if (found != algs->algorithm_names && found[-1] != ':')
 			continue;
 
-		default_impl = algs->implementation;
-		for (impl = default_impl; impl->function_id != 0; impl++) {
+		fwd_impl = algs->implementation;
+		for (impl = fwd_impl; impl->function_id != 0; impl++) {
 			if (impl->function_id == function_id) {
 				func = impl->function;
 				break;
@@ -261,14 +261,14 @@ static func_t fwd_get_func(struct ossl_provider *fwd, int operation_id,
 		break;
 	}
 
-	if (query == 1 && default_algos != NULL)
+	if (query == 1 && fwd_algos != NULL)
 		OSSL_PROVIDER_unquery_operation(fwd->provider,
 						operation_id,
-						default_algos);
+						fwd_algos);
 
 	if (no_cache == 0 &&
 	    fwd->alg_cache[operation_id] == NULL)
-		fwd->alg_cache[operation_id] = default_algos;
+		fwd->alg_cache[operation_id] = fwd_algos;
 
 	ps_dbg_debug(dbg, "func: %p", func);
 	return func;
