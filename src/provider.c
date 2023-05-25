@@ -277,12 +277,18 @@ static int ps_prov_init(const OSSL_CORE_HANDLE *handle,
 		goto err;
 	}
 
-	ps_pctx_debug(pctx, "pctx: %p, %s: %s", pctx,
-		     PS_PKCS11_MODULE_PATH, module);
-	ps_pctx_debug(pctx, "pctx: %p, %s: %s", pctx,
-		     PS_PKCS11_MODULE_INIT_ARGS, module_args);
-	ps_pctx_debug(pctx, "pctx: %p, %s: %s", pctx,
-		     PS_PKCS11_FWD, fwd);
+	ps_pctx_debug(pctx, "pctx: %p, %s: %s, modified: %d", pctx,
+		     PS_PKCS11_MODULE_PATH, module,
+		     OSSL_PARAM_modified(&core_params[0]));
+	ps_pctx_debug(pctx, "pctx: %p, %s: %s, modified: %d", pctx,
+		     PS_PKCS11_MODULE_INIT_ARGS, module_args,
+		     OSSL_PARAM_modified(&core_params[1]));
+	ps_pctx_debug(pctx, "pctx: %p, %s: %s, modified: %d", pctx,
+		     PS_PKCS11_FWD, fwd,
+		     OSSL_PARAM_modified(&core_params[2]));
+
+	if (!OSSL_PARAM_modified(&core_params[2]))
+		fwd = "default";
 
 	/* REVISIT skip provider prefix if present */
 	if (strncmp(fwd, "provider=", strlen("provider=")) == 0)
