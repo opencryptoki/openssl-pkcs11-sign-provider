@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "debug.h"
 
@@ -32,6 +33,9 @@ static FILE *get_stream(void)
 	env = getenv(PKCS11SIGN_ENV_DBG);
 	if (!env)
 		return NULL;
+
+	if (strcmp(env, "stderr") == 0)
+		return stderr;
 
 	s = fopen(env, "w");
 	if (s)
@@ -97,6 +101,7 @@ void ps_dbg_dump(unsigned int level, struct dbg *dbg,
 		fprintf(dbg->stream, "  0x%02x", p[i]);
 	}
 	fwrite("\n", 1, 1, dbg->stream);
+	fflush(dbg->stream);
 }
 
 void ps_dbg_exit(struct dbg *dbg)
@@ -111,7 +116,7 @@ void ps_dbg_exit(struct dbg *dbg)
 	dbg->stream = NULL;
 	dbg->level = DBG_ERROR;
 
-	if (stream)
+	if (stream && (stream != stderr))
 		fclose(stream);
 }
 
