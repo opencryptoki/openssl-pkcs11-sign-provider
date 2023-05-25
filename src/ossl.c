@@ -411,5 +411,9 @@ int core_init(struct ossl_core *core, const OSSL_CORE_HANDLE *handle,
 		}
 	}
 
+	/* other members of fns are optional and must be checked before use */
+	if (!core->fns.get_params)
+		return OSSL_RV_ERR;
+
 	return OSSL_RV_OK;
 }
