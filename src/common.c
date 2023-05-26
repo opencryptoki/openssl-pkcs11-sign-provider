@@ -173,6 +173,8 @@ void op_ctx_free(struct op_ctx *octx)
 	op_ctx_teardown_pkcs11(octx);
 
 	op_ctx_free_fwd(octx);
+	EVP_MD_free(octx->md);
+	EVP_MD_CTX_free(octx->mdctx);
 	obj_free(octx->key);
 	OPENSSL_free(octx->prop);
 	OPENSSL_free(octx);
