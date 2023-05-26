@@ -34,7 +34,7 @@ use the following commands:
 
 ```
 make clean
-make test
+make check
 ```
 
 To setup and run the tests with other token/slot settings for
@@ -46,7 +46,7 @@ export OCK_SLOT="42"
 export OCK_TOKEN="othertok"
 
 make clean
-make test
+make check
 ```
 
 ---
