@@ -15,14 +15,15 @@
 #include "ossl.h"
 #include "pkcs11.h"
 #include "object.h"
+#include "keymgmt.h"
 
-static int op_ctx_signature_size(struct op_ctx *opctx, size_t *siglen)
+static int op_ctx_signature_size(struct op_ctx *opctx, const CK_MECHANISM_PTR mech, size_t *siglen)
 {
 	unsigned char *rawsig, dummy;
 	size_t rawsiglen, len;
 
 	if (pkcs11_sign_init(opctx->pctx->pkcs11, opctx->hsession,
-			     &opctx->mech, opctx->hobject,
+			     mech, opctx->hobject,
 			     &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
 		return OSSL_RV_ERR;
@@ -65,6 +66,42 @@ static int op_ctx_signature_size(struct op_ctx *opctx, size_t *siglen)
 	}
 
 	*siglen = len;
+	return OSSL_RV_OK;
+}
+
+static int signature_pss_saltlen_set(int saltlen, unsigned long digest_size, int keylen, CK_ULONG_PTR slen)
+{
+	unsigned long max_saltlen;
+
+	/* value */
+	if (saltlen >= 0) {
+		*slen = (CK_ULONG)saltlen;
+		return OSSL_RV_OK;
+	}
+
+	max_saltlen = (CK_ULONG)keylen - digest_size - 2;
+
+	/* decode */
+	switch (saltlen) {
+	case RSA_PSS_SALTLEN_DIGEST:
+		*slen = (CK_ULONG)digest_size;
+		break;
+	case RSA_PSS_SALTLEN_MAX:
+	case RSA_PSS_SALTLEN_AUTO:
+		*slen = max_saltlen;
+		break;
+#ifdef RSA_PSS_SALTLEN_AUTO_DIGEST_MAX
+	case RSA_PSS_SALTLEN_AUTO_DIGEST_MAX:
+		/* MIN(max_saltlen, digest_size) */
+		*slen = (max_saltlen < digest_size) ?
+			max_saltlen :
+			digest_size;
+		break;
+#endif
+	default:
+		return OSSL_RV_ERR;
+	}
+
 	return OSSL_RV_OK;
 }
 
@@ -175,7 +212,6 @@ static void *ps_signature_op_dupctx(void *vopctx)
 		ps_opctx_debug(opctx, "ERROR: op_ctx_dup() failed");
 		return NULL;
 	}
-	opctx_new->mech = opctx->mech;
 
 	opctx_new->fwd_op_ctx = ps_signature_op_dupctx_fwd(opctx);
 	if (!opctx_new->fwd_op_ctx) {
@@ -255,7 +291,7 @@ static int ps_signature_op_get_ctx_params(void *vopctx, OSSL_PARAM params[])
 static int ps_signature_op_set_ctx_params(void *vopctx,
 					  const OSSL_PARAM params[])
 {
-	OSSL_FUNC_signature_set_ctx_params_fn *fwd_set_params_fn;
+	OSSL_FUNC_signature_set_ctx_params_fn *fwd_set_ctx_params_fn;
 	struct op_ctx *opctx = vopctx;
 	const OSSL_PARAM *p;
 
@@ -266,19 +302,19 @@ static int ps_signature_op_set_ctx_params(void *vopctx,
 	for (p = params; p && p->key; p++)
 		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	fwd_set_params_fn = (OSSL_FUNC_signature_set_ctx_params_fn *)
+	fwd_set_ctx_params_fn = (OSSL_FUNC_signature_set_ctx_params_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
 				  OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS,
 				  &opctx->pctx->dbg);
 
-	/* fwd_set_params_fn is optional */
-	if (!fwd_set_params_fn)
+	/* fwd_set_ctx_params_fn is optional */
+	if (!fwd_set_ctx_params_fn)
 		return OSSL_RV_OK;
 
-	if (fwd_set_params_fn(opctx->fwd_op_ctx, params) != OSSL_RV_OK) {
+	if (fwd_set_ctx_params_fn(opctx->fwd_op_ctx, params) != OSSL_RV_OK) {
 		put_error_op_ctx(opctx,
 				 PS_ERR_DEFAULT_PROV_FUNC_FAILED,
-				 "fwd_set_params_fn failed");
+				 "fwd_set_ctx_params_fn failed");
 		return OSSL_RV_ERR;
 	}
 
@@ -542,8 +578,7 @@ static int ps_signature_op_sign_init_fwd(struct op_ctx *opctx,
 }
 
 static int ps_signature_op_sign_init(void *vopctx, void *vkey,
-				     const OSSL_PARAM params[],
-				     const CK_MECHANISM_PTR mech)
+				     const OSSL_PARAM params[])
 {
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
@@ -552,8 +587,8 @@ static int ps_signature_op_sign_init(void *vopctx, void *vkey,
 	if (!opctx || !key )
 		return OSSL_RV_ERR;
 
-	ps_opctx_debug(opctx, "opctx: %p key: %p, mech: %p",
-		       opctx, key, mech);
+	ps_opctx_debug(opctx, "opctx: %p key: %p",
+		       opctx, key);
 
 	for (p = params; p && p->key; p++)
 		ps_opctx_debug(opctx, "param: %s", p->key);
@@ -568,17 +603,136 @@ static int ps_signature_op_sign_init(void *vopctx, void *vkey,
 		return OSSL_RV_ERR;
 	}
 
-	if (!key->use_pkcs11)
-		return OSSL_RV_OK;
+	return OSSL_RV_OK;
+}
 
-	opctx->mech = *mech;
+static int signature_mechanism_prepare_rsa(struct op_ctx *opctx,
+					   CK_MECHANISM_PTR mech,
+					   CK_RSA_PKCS_PSS_PARAMS_PTR pss_params)
+{
+	char digest[32], mgf[32];
+	int padmode, saltlen, digest_size;
+	unsigned long key_size;
+	int s;
 
-	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
+	OSSL_PARAM s_params[] = {
+		OSSL_PARAM_utf8_string(OSSL_SIGNATURE_PARAM_DIGEST,
+				       &digest, sizeof(digest)),
+		OSSL_PARAM_utf8_string(OSSL_SIGNATURE_PARAM_MGF1_DIGEST,
+				       &mgf, sizeof(mgf)),
+		OSSL_PARAM_END
+	};
+	OSSL_PARAM i_params[] = {
+		OSSL_PARAM_int(OSSL_SIGNATURE_PARAM_PAD_MODE, &padmode),
+		OSSL_PARAM_int(OSSL_SIGNATURE_PARAM_PSS_SALTLEN, &saltlen),
+		OSSL_PARAM_int(OSSL_SIGNATURE_PARAM_DIGEST_SIZE, &digest_size),
+		OSSL_PARAM_END
+	};
+
+	if (ps_signature_op_get_ctx_params(opctx, s_params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: ps_signature_op_get_ctx_params(string) failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (ps_signature_op_get_ctx_params(opctx, i_params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: ps_signature_op_get_ctx_params(int) failed");
+		return OSSL_RV_ERR;
+	}
+
+	s = keymgmt_get_size(opctx->key);
+	if (s < 0) {
+		ps_opctx_debug(opctx, "ERROR: keymgmt_get_size failed");
+		return OSSL_RV_ERR;
+	}
+	key_size = s;
+
+	if (!OSSL_PARAM_modified(&i_params[0]))
+		padmode = RSA_NO_PADDING;
+
+	if (mechtype_by_id(padmode, &mech->mechanism) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: mechtype_by_id() failed");
+		return OSSL_RV_ERR;
+	}
+
+	switch(mech->mechanism) {
+	case CKM_RSA_PKCS_PSS:
+		if (!OSSL_PARAM_modified(&s_params[0]) ||
+		    !OSSL_PARAM_modified(&s_params[1]) ||
+		    !OSSL_PARAM_modified(&i_params[1])) {
+			ps_opctx_debug(opctx, "ERROR: pss parameters missing");
+			return OSSL_RV_ERR;
+		}
+
+		if (!OSSL_PARAM_modified(&i_params[2]) &&
+		    (size_by_name(digest, &digest_size) != OSSL_RV_OK)) {
+			ps_opctx_debug(opctx, "ERROR: size_by_name(%s) failed",
+				       digest);
+			return OSSL_RV_ERR;
+		}
+
+		if (mechtype_by_name(digest, &pss_params->hashAlg) != OSSL_RV_OK) {
+			ps_opctx_debug(opctx, "ERROR: mechtype_by_name(%s) failed",
+				       digest);
+			return OSSL_RV_ERR;
+		}
+
+		if (mgftype_by_name(mgf, &pss_params->mgf) != OSSL_RV_OK) {
+			ps_opctx_debug(opctx, "ERROR: mechtype_by_name(%s) failed",
+				       mgf);
+			return OSSL_RV_ERR;
+		}
+
+		if (signature_pss_saltlen_set(saltlen, digest_size, key_size,
+					      &pss_params->sLen) != OSSL_RV_OK) {
+			ps_opctx_debug(opctx, "ERROR: signature_pss_saltlen_set(%d) failed",
+				       saltlen);
+			return OSSL_RV_ERR;
+		}
+
+		mech->pParameter = pss_params;
+		mech->ulParameterLen = sizeof(*pss_params);
+		break;
+	case CKM_RSA_X_509:
+	case CKM_RSA_PKCS:
+		/* no mechanism parameter */
+		mech->pParameter = NULL;
+		mech->ulParameterLen = 0;
+		break;
+	default:
+		ps_opctx_debug(opctx, "ERROR: mechanism type %lu not supported");
 		return OSSL_RV_ERR;
 	}
 
 	return OSSL_RV_OK;
+}
+
+static int signature_mechanism_prepare_ec(CK_MECHANISM_PTR mech)
+{
+	mech->mechanism = CKM_ECDSA;
+	mech->pParameter = NULL;
+	mech->ulParameterLen = 0;
+
+	return OSSL_RV_OK;
+}
+
+static int signature_mechanism_prepare(struct op_ctx *opctx,
+				       CK_MECHANISM_PTR mech,
+				       CK_RSA_PKCS_PSS_PARAMS_PTR pss_params)
+{
+	int rv = OSSL_RV_ERR;
+
+	switch (opctx->type) {
+	case EVP_PKEY_EC:
+		rv = signature_mechanism_prepare_ec(mech);
+		break;
+	case EVP_PKEY_RSA:
+		rv = signature_mechanism_prepare_rsa(opctx, mech, pss_params);
+		break;
+	default:
+		break;
+	}
+
+	return rv;
 }
 
 static int ps_signature_op_sign_fwd(struct op_ctx *opctx,
@@ -615,8 +769,10 @@ static int ps_signature_op_sign(void *vopctx,
 				size_t sigsize,
 				const unsigned char *tbs, size_t tbslen)
 {
+	CK_RSA_PKCS_PSS_PARAMS pss_params;
 	struct op_ctx *opctx = vopctx;
 	size_t raw_siglen;
+	CK_MECHANISM mech;
 
 	if (opctx == NULL)
 		return OSSL_RV_ERR;
@@ -631,13 +787,26 @@ static int ps_signature_op_sign(void *vopctx,
 	}
 
 	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_sign_fwd(opctx, sig, siglen, sigsize, tbs, tbslen);
+		return ps_signature_op_sign_fwd(opctx, sig, siglen, sigsize,
+						tbs, tbslen);
+
+	if (signature_mechanism_prepare(opctx, &mech,
+					&pss_params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx,
+			       "ERROR: signature_mechanism_prepare() failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
+		return OSSL_RV_ERR;
+	}
 
 	if (!sig)
-		return op_ctx_signature_size(opctx, siglen);
+		return op_ctx_signature_size(opctx, &mech, siglen);
 
 	if (pkcs11_sign_init(opctx->pctx->pkcs11, opctx->hsession,
-			     &opctx->mech, opctx->hobject,
+			     &mech, opctx->hobject,
 			     &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
 		return OSSL_RV_ERR;
@@ -656,7 +825,8 @@ static int ps_signature_op_sign(void *vopctx,
 			  sig, raw_siglen);
 
 	if (ossl_ecdsa_signature(sig, raw_siglen, sig, siglen) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: ossl_build_ecdsa_signature() failed");
+		ps_opctx_debug(opctx,
+			       "ERROR: ossl_build_ecdsa_signature() failed");
 		return OSSL_RV_ERR;
 	}
 
@@ -913,17 +1083,15 @@ static int ps_signature_op_digest_sign_init_fwd(struct op_ctx *opctx,
 static int ps_signature_op_digest_sign_init(struct op_ctx *opctx,
 					    const char *mdname,
 					    struct obj *key,
-					    const OSSL_PARAM params[],
-					    const CK_MECHANISM_PTR mech)
+					    const OSSL_PARAM params[])
 {
 	const OSSL_PARAM *p;
 
 	if (!opctx || !key)
 		return OSSL_RV_ERR;
 
-	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p, mech: %p",
-		       opctx, (mdname) ? mdname : "",
-		       key, mech);
+	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p",
+		       opctx, (mdname) ? mdname : "", key);
 
 	for (p = params; p != NULL && p->key != NULL; p++)
 		ps_opctx_debug(opctx, "param: %s", p->key);
@@ -939,13 +1107,6 @@ static int ps_signature_op_digest_sign_init(struct op_ctx *opctx,
 
 	if (!opctx->key->use_pkcs11)
 		return OSSL_RV_OK;
-
-	opctx->mech = *mech;
-
-	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
-		return OSSL_RV_ERR;
-	}
 
 	/* mdctx */
 	if (opctx->mdctx != NULL)
@@ -1072,9 +1233,11 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 					     size_t sigsize)
 {
 	unsigned char tbs[DER_DIGESTINFO_MAX + EVP_MAX_MD_SIZE], *digest;
+	CK_RSA_PKCS_PSS_PARAMS pss_params;
+	unsigned int tbslen = 0, dlen = 0;
 	struct op_ctx *opctx = vopctx;
 	size_t raw_siglen;
-	unsigned int tbslen = 0, dlen = 0;
+	CK_MECHANISM mech;
 
 	if (!opctx || !siglen)
 		return OSSL_RV_ERR;
@@ -1098,13 +1261,23 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 		return OSSL_RV_ERR;
 	}
 
+	if (signature_mechanism_prepare(opctx, &mech, &pss_params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: signature_mechanism_prepare failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (op_ctx_object_ensure(opctx) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_object_ensure() failed");
+		return OSSL_RV_ERR;
+	}
+
 	if (!sig)
-		return op_ctx_signature_size(opctx, siglen);
+		return op_ctx_signature_size(opctx, &mech, siglen);
 
 	switch (opctx->type) {
 	case EVP_PKEY_RSA:
 		/* prefix hash with DER-encoded algo */
-		if ((opctx->mech.mechanism == CKM_RSA_PKCS) &&
+		if ((mech.mechanism == CKM_RSA_PKCS) &&
 		    (ossl_hash_prefix(opctx->mdctx, tbs, &tbslen) != OSSL_RV_OK))
 			return OSSL_RV_ERR;
 		digest = tbs + tbslen;
@@ -1126,7 +1299,7 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 			  digest, dlen);
 
 	if (pkcs11_sign_init(opctx->pctx->pkcs11, opctx->hsession,
-			     &opctx->mech, opctx->hobject,
+			     &mech, opctx->hobject,
 			     &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
 		return OSSL_RV_ERR;
@@ -1416,14 +1589,13 @@ static int ps_signature_rsa_sign_init(void *vopctx,
 				      void *vkey,
 				      const OSSL_PARAM params[])
 {
-	CK_MECHANISM mech = { CKM_RSA_PKCS, NULL, 0 };
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
 
 	ps_opctx_debug(opctx, "opctx: %p key: %p",
 		       opctx, key);
 
-	return ps_signature_op_sign_init(opctx, key, params, &mech);
+	return ps_signature_op_sign_init(opctx, key, params);
 }
 
 static int ps_signature_rsa_digest_sign_init(void *vopctx,
@@ -1431,13 +1603,12 @@ static int ps_signature_rsa_digest_sign_init(void *vopctx,
 					     void *vkey,
 					     const OSSL_PARAM params[])
 {
-	CK_MECHANISM mech = { CKM_RSA_PKCS, NULL, 0 };
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
 
 	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p", opctx,
 			mdname != NULL ? mdname : "", key);
-	return ps_signature_op_digest_sign_init(opctx, mdname, key, params, &mech);
+	return ps_signature_op_digest_sign_init(opctx, mdname, key, params);
 }
 
 static void *ps_signature_ec_newctx(void *vpctx, const char *propq)
@@ -1509,14 +1680,13 @@ static int ps_signature_ec_sign_init(void *vopctx,
 				     void *vkey,
 				     const OSSL_PARAM params[])
 {
-	CK_MECHANISM mech = { CKM_ECDSA, NULL, 0 };
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
 
 	ps_opctx_debug(opctx, "opctx: %p key: %p",
 		       opctx, key);
 
-	return ps_signature_op_sign_init(opctx, key, params, &mech);
+	return ps_signature_op_sign_init(opctx, key, params);
 }
 
 static int ps_signature_ec_digest_sign_init(void *vopctx,
@@ -1524,13 +1694,12 @@ static int ps_signature_ec_digest_sign_init(void *vopctx,
 					    void *vkey,
 					    const OSSL_PARAM params[])
 {
-	CK_MECHANISM mech = { CKM_ECDSA, NULL, 0 };
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
 
 	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p", opctx,
 			mdname != NULL ? mdname : "", key);
-	return ps_signature_op_digest_sign_init(opctx, mdname, key, params, &mech);
+	return ps_signature_op_digest_sign_init(opctx, mdname, key, params);
 }
 
 static const OSSL_DISPATCH ps_rsa_signature_functions[] = {
