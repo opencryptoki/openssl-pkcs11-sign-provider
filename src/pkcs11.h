@@ -10,6 +10,10 @@
 
 #include "common.h"
 
+int mechtype_by_id(int id, CK_MECHANISM_TYPE_PTR mech);
+int mechtype_by_name(const char *name, CK_MECHANISM_TYPE_PTR mech);
+int mgftype_by_name(const char *name, CK_RSA_PKCS_MGF_TYPE_PTR mgf);
+
 size_t pkcs11_strlen(const CK_CHAR_PTR c, CK_ULONG csize);
 int pkcs11_strcmp(const char *s, const CK_CHAR_PTR c, CK_ULONG csize);
 

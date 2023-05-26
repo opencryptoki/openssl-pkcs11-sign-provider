@@ -6,6 +6,8 @@
 #include <dlfcn.h>
 #include <string.h>
 #include <openssl/crypto.h>
+#include <openssl/core_names.h>
+#include <openssl/rsa.h>
 
 #include "debug.h"
 #include "pkcs11.h"
@@ -19,6 +21,84 @@ static const CK_OBJECT_CLASS oc_certificate = CKO_CERTIFICATE;
 const char *str_priv = "private";
 const char *str_pub = "public";
 const char *str_cert = "certificate";
+
+static struct {
+	int id;
+	CK_MECHANISM_TYPE mech;
+} id_mechtype_map [] = {
+	/* rsa pad modes */
+	{ RSA_NO_PADDING,		CKM_RSA_X_509 },
+	{ RSA_PKCS1_PADDING,		CKM_RSA_PKCS },
+	{ RSA_PKCS1_OAEP_PADDING,	CKM_RSA_PKCS_OAEP },
+	{ RSA_PKCS1_PSS_PADDING,	CKM_RSA_PKCS_PSS },
+};
+
+static struct {
+	const char *name;
+	CK_MECHANISM_TYPE mech;
+} name_mechtype_map [] = {
+	/* digest */
+	{ "sha-1",			CKM_SHA_1},
+	{ "sha1",			CKM_SHA_1},
+	{ "sha2-224",			CKM_SHA224 },
+	{ "sha-224",			CKM_SHA224 },
+	{ "sha224",			CKM_SHA224 },
+	{ "sha2-256",			CKM_SHA256 },
+	{ "sha-256",			CKM_SHA256 },
+	{ "sha256",			CKM_SHA256 },
+	{ "sha2-384",			CKM_SHA384 },
+	{ "sha-384",			CKM_SHA384 },
+	{ "sha384",			CKM_SHA384 },
+	{ "sha2-512",			CKM_SHA512 },
+	{ "sha-512",			CKM_SHA512 },
+	{ "sha512",			CKM_SHA512 },
+#ifdef CKM_SHA512_224
+	{ "sha2-512/224",		CKM_SHA512_224 },
+	{ "sha-512/224",		CKM_SHA512_224 },
+	{ "sha512/224",			CKM_SHA512_224 },
+#endif
+#ifdef CKM_SHA512_256
+	{ "sha2-512/256",		CKM_SHA512_256 },
+	{ "sha-512/256",		CKM_SHA512_256 },
+	{ "sha512/256",			CKM_SHA512_256 },
+#endif
+#ifdef CKM_SHA3_224
+	{ "sha3-224",			CKM_SHA3_224 },
+#endif
+#ifdef CKM_SHA3_256
+	{ "sha3-256",			CKM_SHA3_256 },
+#endif
+#ifdef CKM_SHA3_384
+	{ "sha3-384",			CKM_SHA3_384 },
+#endif
+#ifdef CKM_SHA3_512
+	{ "sha3-512",			CKM_SHA3_512 },
+#endif
+};
+
+static struct {
+	CK_MECHANISM_TYPE mech;
+	CK_RSA_PKCS_MGF_TYPE mgf;
+} mech_mgf_map[] = {
+	/* digest */
+	{ CKM_SHA_1,			CKG_MGF1_SHA1 },
+	{ CKM_SHA224,			CKG_MGF1_SHA224 },
+	{ CKM_SHA256,			CKG_MGF1_SHA256 },
+	{ CKM_SHA384,			CKG_MGF1_SHA384 },
+	{ CKM_SHA512,			CKG_MGF1_SHA512 },
+#if defined(CKM_SHA3_224) && defined(CKG_MGF1_SHA3_224)
+	{ CKM_SHA3_224,			CKG_MGF1_SHA3_224 },
+#endif
+#if defined(CKM_SHA3_256) && defined(CKG_MGF1_SHA3_256)
+	{ CKM_SHA3_256,			CKG_MGF1_SHA3_256 },
+#endif
+#if defined(CKM_SHA3_384) && defined(CKG_MGF1_SHA3_384)
+	{ CKM_SHA3_384,			CKG_MGF1_SHA3_384 },
+#endif
+#if defined(CKM_SHA3_512) && defined(CKG_MGF1_SHA3_512)
+	{ CKM_SHA3_512,			CKG_MGF1_SHA3_512 },
+#endif
+};
 
 static void module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
 {
@@ -58,6 +138,58 @@ static inline void attr_string(CK_ATTRIBUTE_PTR attr, CK_ATTRIBUTE_TYPE type,
 	attr->type = type;
 	attr->pValue = (CK_VOID_PTR)s;
 	attr->ulValueLen = strlen(s);
+}
+
+int mechtype_by_id(int id, CK_MECHANISM_TYPE_PTR mech)
+{
+	size_t i, nelem = sizeof(id_mechtype_map) / sizeof(*id_mechtype_map);
+
+	for (i = 0; i < nelem; i++) {
+		if (id != id_mechtype_map[i].id)
+			continue;
+
+		*mech = id_mechtype_map[i].mech;
+		return OSSL_RV_OK;
+	}
+
+	return OSSL_RV_ERR;
+}
+
+int mechtype_by_name(const char *name, CK_MECHANISM_TYPE_PTR mech)
+{
+	size_t i, nelem = sizeof(name_mechtype_map) / sizeof(*name_mechtype_map);
+
+	for (i = 0; i < nelem; i++) {
+		if (OPENSSL_strcasecmp(name, name_mechtype_map[i].name) != 0)
+			continue;
+
+		*mech = name_mechtype_map[i].mech;
+		return OSSL_RV_OK;
+	}
+
+	return OSSL_RV_ERR;
+}
+
+int mgftype_by_name(const char *name, CK_RSA_PKCS_MGF_TYPE_PTR mgf)
+{
+	size_t i, nelem = sizeof(mech_mgf_map) / sizeof(*mech_mgf_map);
+	CK_MECHANISM_TYPE mech;
+
+	if (mechtype_by_name(name, &mech) != OSSL_RV_OK)
+		return OSSL_RV_ERR;
+
+	for (i = 0; i < nelem; i++) {
+		if (mech_mgf_map[i].mech != mech)
+			continue;
+
+		*mgf = mech_mgf_map[i].mgf;
+		break;
+	}
+
+	if (i >= nelem)
+		return OSSL_RV_ERR;
+
+	return OSSL_RV_OK;
 }
 
 void pkcs11_attr_type(CK_ATTRIBUTE_PTR attr, const char *type)
