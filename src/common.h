@@ -75,9 +75,7 @@ struct obj {
 	/* common */
 	unsigned int refcnt;
 	struct provider_ctx *pctx;
-
 	int type;
-	OSSL_PARAM *params;	/* NULL-terminated */
 
 	/* fwd */
 	void *fwd_key;
@@ -106,7 +104,6 @@ struct op_ctx {
 	struct obj *key;
 	CK_OBJECT_HANDLE hobject;
 	CK_SESSION_HANDLE hsession;
-	CK_MECHANISM mech;
 
 	/* fwd */
 	void *fwd_op_ctx;
