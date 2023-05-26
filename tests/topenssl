@@ -74,10 +74,10 @@ fi
 echo server: ok
 
 echo "##################################################"
-echo "## RSA: encrypt/decrypt (file/pkcs11)"
+echo "## RSA: encrypt/decrypt, raw (file/pkcs11)"
 echo "##"
 
-echo "## encrypt data"
+echo "## encrypt data (no padding)"
 ossl '
 pkeyutl -encrypt -pkeyopt rsa_padding_mode:none
         -pubin -inkey "${FILE_PEM_RSA4K_PUB}"
@@ -85,7 +85,7 @@ pkeyutl -encrypt -pkeyopt rsa_padding_mode:none
         -out "${TMPPDIR}/data.enc"' \
 || exit 99
 
-echo "## decrypt data"
+echo "## decrypt data (no padding)"
 ossl '
 pkeyutl -decrypt -pkeyopt rsa_padding_mode:none
         -inkey "${URI_KEY_RSA4K_PRV}"
@@ -93,14 +93,74 @@ pkeyutl -decrypt -pkeyopt rsa_padding_mode:none
         -out "${TMPPDIR}/data.dec"' \
 || exit 99
 
-echo "## compare clear-text results"
+echo "## compare clear-text results (no padding)"
 diff -q "${TMPPDIR}/random-512.bin" "${TMPPDIR}/data.dec" \
 || exit 99
-echo "diff: identical results"
+echo "diff: identical results (no padding)"
 rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
 
 echo "##################################################"
-echo "## RSA: sign/verify (pkcs11/file)"
+echo "## RSA: encrypt/decrypt, pkcs1 (file/pkcs11)"
+echo "##"
+
+echo "## encrypt data (pkcs1 padding)"
+ossl '
+pkeyutl -encrypt -pkeyopt rsa_padding_mode:pkcs1
+        -pubin -inkey "${FILE_PEM_RSA4K_PUB}"
+        -in  "${TMPPDIR}/random-256.bin"
+        -out "${TMPPDIR}/data.enc"' \
+|| exit 99
+
+echo "## decrypt data (pkcs1 padding)"
+ossl '
+pkeyutl -decrypt -pkeyopt rsa_padding_mode:pkcs1
+        -inkey "${URI_KEY_RSA4K_PRV}"
+        -in  "${TMPPDIR}/data.enc"
+        -out "${TMPPDIR}/data.dec"' \
+|| exit 99
+
+echo "## compare clear-text results (pkcs1 padding)"
+diff -q "${TMPPDIR}/random-256.bin" "${TMPPDIR}/data.dec" \
+|| exit 99
+echo "diff: identical results (pkcs1 padding)"
+rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
+
+echo "##################################################"
+echo "## RSA: encrypt/decrypt, oaep (file/pkcs11)"
+echo "##"
+
+echo "## encrypt data (oaep padding)"
+ossl '
+pkeyutl -encrypt
+        -pubin -inkey "${FILE_PEM_RSA4K_PUB}"
+        -pkeyopt rsa_padding_mode:oaep
+        -pkeyopt rsa_oaep_label:deaddeaddeaddead
+        -pkeyopt rsa_oaep_md:sha-256
+        -pkeyopt rsa_mgf1_md:sha-256
+        -in  "${TMPPDIR}/random-256.bin"
+        -out "${TMPPDIR}/data.enc"' \
+|| exit 99
+
+echo "## decrypt data (oaep padding)"
+ossl '
+pkeyutl -decrypt
+        -inkey "${URI_KEY_RSA4K_PRV}"
+        -pkeyopt rsa_padding_mode:oaep
+        -pkeyopt rsa_oaep_label:deaddeaddeaddead
+        -pkeyopt rsa_oaep_md:sha-256
+        -pkeyopt rsa_mgf1_md:sha-256
+        -in  "${TMPPDIR}/data.enc"
+        -out "${TMPPDIR}/data.dec"' \
+|| exit 99
+
+echo "## compare clear-text results (oaep padding)"
+diff -q "${TMPPDIR}/random-256.bin" "${TMPPDIR}/data.dec" \
+|| exit 99
+echo "diff: identical results (oaep padding)"
+rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
+
+echo "##################################################"
+echo "## RSA: sign/verify, pkcs1 (pkcs11/file)"
 echo "##"
 
 ossl '
@@ -116,5 +176,47 @@ dgst -verify "${FILE_PEM_RSA4K_PUB}"
      -signature "${TMPPDIR}/random-1k.bin.rsa-sig"
      "${TMPPDIR}/random-1k.bin"' \
 || exit 99
+
+echo "##################################################"
+echo "## RSA: tls-server/client (ECDHE-RSA-AES256-GCM-SHA384)"
+echo "##"
+
+ossl '
+s_server -brief -CAfile ${FILE_PEM_CA_CRT}
+         -key ${URI_KEY_RSA4K_PRV}
+         -cert ${FILE_PEM_RSA4K_CRT}
+         -cipher ECDHE-RSA-AES256-GCM-SHA384
+         -www -accept localhost:4433 -naccept +1' \
+2> "${TMPPDIR}/server.log" &
+
+# wait for server start
+sleep 1
+
+echo "Q" | \
+ossl '
+s_client -brief -CAfile ${FILE_PEM_CA_CRT}
+         -connect localhost:4433
+         -tls1_2' \
+2> "${TMPPDIR}/client.log"
+
+if [ $? -ne 0 ]; then
+  echo "client failed"
+  echo "log start -------------"
+  cat "${TMPPDIR}/client.log"
+  echo "log end ---------------"
+  exit 99
+fi
+echo "client: ok"
+
+# get server status
+wait $!
+if [ $? -ne 0 ]; then
+  echo "server failed"
+  echo "log start -------------"
+  cat "${TMPPDIR}/server.log"
+  echo "log end ---------------"
+  exit 99
+fi
+echo server: ok
 
 exit 0
