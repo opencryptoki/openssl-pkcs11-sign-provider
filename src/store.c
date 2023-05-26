@@ -531,11 +531,7 @@ static int ps_store_close(void *vctx)
 		     sctx, sctx->pctx);
 
 	pkcs11_session_close(sctx->pkcs11, &sctx->session, dbg);
-
 	ps_store_ctx_free(sctx);
-
-	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, exit",
-		     sctx, sctx->pctx);
 
 	return OSSL_RV_OK;
 }
