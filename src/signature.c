@@ -240,6 +240,7 @@ static void *ps_signature_op_dupctx(void *vopctx)
 				 "EVP_MD_up_ref failed");
 		goto err;
 	}
+	opctx_new->md = opctx->md;
 
 	if ((opctx->hobject != CK_INVALID_HANDLE) &&
 	    (op_ctx_object_ensure(opctx_new) != OSSL_RV_OK)) {
