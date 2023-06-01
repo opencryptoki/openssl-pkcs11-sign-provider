@@ -21,7 +21,8 @@ pkcs11sign_la_SOURCES = \
 	signature.c signature.h \
 	asym.c asym.h \
 	keyexch.c keyexch.h \
-	common.c common.h
+	common.c common.h \
+	consttime.h
 
 pkcs11sign_la_CFLAGS = $(AM_CFLAGS) $(STD_FLAGS) $(OPENSSL_CFLAGS) -D_GNU_SOURCE
 pkcs11sign_la_LIBADD = $(OPENSSL_LIBS)
