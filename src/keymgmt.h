@@ -8,4 +8,6 @@
 
 extern const OSSL_ALGORITHM ps_keymgmt[];
 
+int keymgmt_get_size(struct obj *key);
+
 #endif /* _PKCS11SIGN_KEYMGMT_H */

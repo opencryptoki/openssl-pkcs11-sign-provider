@@ -1126,3 +1126,26 @@ const OSSL_ALGORITHM ps_keymgmt[] = {
 				ps_keymgmt_functions_ec, NULL },
 	{ NULL, NULL, NULL, NULL }
 };
+
+int keymgmt_get_size(struct obj *key)
+{
+	int size = 0;
+
+	OSSL_PARAM key_params[] = {
+		OSSL_PARAM_int(OSSL_PKEY_PARAM_MAX_SIZE, &size),
+		OSSL_PARAM_END
+	};
+
+	ps_obj_debug(key, "key: %p", key);
+
+	if (ps_keymgmt_get_params(key, key_params) != OSSL_RV_OK ||
+	    !OSSL_PARAM_modified(&key_params[0]) ||
+	    size <= 0) {
+		put_error_key(key, PS_ERR_MISSING_PARAMETER,
+			      "failed to get key size");
+		return -1;
+	}
+
+	ps_obj_debug(key, "key: %p, size: %d", key, size);
+	return size;
+}
