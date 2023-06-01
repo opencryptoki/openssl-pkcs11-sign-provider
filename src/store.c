@@ -56,7 +56,7 @@ static int key2params(struct obj *obj, OSSL_PARAM *params, unsigned int nparams)
 	params[1] = OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE,
 						     data_type, 0);
 	params[2] = OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE,
-						      obj_get(obj), sizeof(struct obj));
+						      obj, sizeof(struct obj));
 	params[3] = OSSL_PARAM_construct_end();
 
 	return OSSL_RV_OK;
