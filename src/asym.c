@@ -5,16 +5,23 @@
  *          Ingo Franzki <ifranzki@linux.ibm.com>
  */
 
+#include <stdbool.h>
 #include <string.h>
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
+#include <openssl/prov_ssl.h>
+#include <openssl/rand.h>
 
 #include "common.h"
 #include "debug.h"
 #include "ossl.h"
 #include "pkcs11.h"
 #include "keymgmt.h"
+#include "consttime.h"
+
+#define WORD_LO(x)	((x) & 0xff)
+#define WORD_HI(x)	(WORD_LO((x) >> 8))
 
 #define DISPATCH_ASYMCIPHER(tname, name) \
   DECL_DISPATCH_FUNC(asym_cipher, tname, name)
@@ -28,6 +35,12 @@ DISPATCH_ASYMCIPHER(decrypt_init, ps_asym_op_decrypt_init);
 DISPATCH_ASYMCIPHER(decrypt, ps_asym_rsa_decrypt);
 DISPATCH_ASYMCIPHER(gettable_ctx_params, ps_asym_rsa_gettable_ctx_params);
 DISPATCH_ASYMCIPHER(settable_ctx_params, ps_asym_rsa_settable_ctx_params);
+
+struct rsa_pkcs1_tls_params {
+	bool padding;
+	unsigned int client_version;
+	unsigned int alt_version;
+};
 
 static int ps_asym_op_newctx_fwd(struct op_ctx *opctx,
 					    int pkey_type)
@@ -192,7 +205,8 @@ static int ps_asym_op_set_ctx_params(void *vopctx, const OSSL_PARAM params[])
 }
 
 static int asym_mechanism_prepare(struct op_ctx *opctx, CK_MECHANISM_PTR mech,
-				  CK_RSA_PKCS_OAEP_PARAMS_PTR oaep_params)
+				  CK_RSA_PKCS_OAEP_PARAMS_PTR oaep_params,
+				  struct rsa_pkcs1_tls_params *tls_params)
 {
 	char digest[32], mgf[32];
 	int padmode;
@@ -214,6 +228,13 @@ static int asym_mechanism_prepare(struct op_ctx *opctx, CK_MECHANISM_PTR mech,
 				     sizeof(oaep_params->pSourceData)),
 		OSSL_PARAM_END
 	};
+	OSSL_PARAM u_params[] = {
+		OSSL_PARAM_uint(OSSL_ASYM_CIPHER_PARAM_TLS_CLIENT_VERSION,
+				&tls_params->client_version),
+		OSSL_PARAM_uint(OSSL_ASYM_CIPHER_PARAM_TLS_NEGOTIATED_VERSION,
+				&tls_params->alt_version),
+		OSSL_PARAM_END
+	};
 
 	if (ps_asym_op_get_ctx_params(opctx, s_params) != OSSL_RV_OK) {
 		ps_opctx_debug(opctx, "ERROR: ps_asym_op_get_ctx_params(string) failed");
@@ -222,6 +243,11 @@ static int asym_mechanism_prepare(struct op_ctx *opctx, CK_MECHANISM_PTR mech,
 
 	if (ps_asym_op_get_ctx_params(opctx, i_params) != OSSL_RV_OK) {
 		ps_opctx_debug(opctx, "ERROR: ps_asym_op_get_ctx_params(int) failed");
+		return OSSL_RV_ERR;
+	}
+
+	if (ps_asym_op_get_ctx_params(opctx, u_params) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: ps_asym_op_get_ctx_params(uint) failed");
 		return OSSL_RV_ERR;
 	}
 
@@ -234,6 +260,12 @@ static int asym_mechanism_prepare(struct op_ctx *opctx, CK_MECHANISM_PTR mech,
 		ps_opctx_debug(opctx, "ERROR: mechtype_by_id() failed");
 		return OSSL_RV_ERR;
 	}
+
+	tls_params->padding = (padmode == RSA_PKCS1_WITH_TLS_PADDING);
+	if (!OSSL_PARAM_modified(&u_params[0]))
+		tls_params->client_version = 0;
+	if (!OSSL_PARAM_modified(&u_params[1]))
+		tls_params->alt_version = 0;
 
 	switch(mech->mechanism) {
 	case CKM_RSA_PKCS_OAEP:
@@ -480,6 +512,48 @@ static int ps_asym_op_encrypt(void *vctx,
 				       in, inlen);
 }
 
+static CK_RV asym_op_decrypt_tls(struct op_ctx *opctx,
+			       unsigned char *out, size_t *outlen,
+			       const unsigned char *in, size_t inlen,
+			       struct rsa_pkcs1_tls_params *tls_params)
+{
+	CK_BYTE tmp[2][2 + SSL_MAX_MASTER_KEY_LENGTH];
+	size_t len = 2 + SSL_MAX_MASTER_KEY_LENGTH;
+	int rv[2] = { CKR_GENERAL_ERROR, CKR_OK };
+	unsigned int good, ver, alt;
+
+	/* fill buffer with random data for error case */
+	if (RAND_priv_bytes_ex(opctx->pctx->core.libctx,
+			       tmp[0], len, 0) != OSSL_RV_OK) {
+		return OSSL_RV_ERR;
+	}
+
+	good = 1;
+	good &= ct_equals(pkcs11_decrypt(opctx->pctx->pkcs11, opctx->hsession,
+					 in, inlen, tmp[1], &len,
+					 &opctx->pctx->dbg),
+			  CKR_OK);
+	good &= ct_equals(len, (2 + SSL_MAX_MASTER_KEY_LENGTH));
+
+	ver = 1;
+	ver &= ct_equals(WORD_HI(tls_params->client_version), tmp[1][0]);
+	ver &= ct_equals(WORD_LO(tls_params->client_version), tmp[1][1]);
+
+	if (tls_params->alt_version > 0) {
+		alt = 1;
+		alt &= ct_equals(WORD_HI(tls_params->alt_version), tmp[1][0]);
+		alt &= ct_equals(WORD_LO(tls_params->alt_version), tmp[1][1]);
+		ver |= alt;
+	}
+	good &= ver;
+	good = !!good;
+
+	*outlen = SSL_MAX_MASTER_KEY_LENGTH;
+	memcpy(out, tmp[good] + 2, SSL_MAX_MASTER_KEY_LENGTH);
+
+	return rv[good];
+}
+
 static int ps_asym_op_decrypt_fwd(struct op_ctx *opctx,
 				  unsigned char *out, size_t *outlen,
 				  size_t outsize, const unsigned char *in,
@@ -513,8 +587,14 @@ static int ps_asym_op_decrypt(struct op_ctx *opctx,
 			      size_t outsize, const unsigned char *in,
 			      size_t inlen)
 {
+	struct rsa_pkcs1_tls_params tls_params = {
+		.padding = false,
+		.alt_version = 0,
+	};
+	int rv[2] = { OSSL_RV_ERR, OSSL_RV_OK };
 	CK_RSA_PKCS_OAEP_PARAMS oaep_params;
 	CK_MECHANISM mech;
+	unsigned int good;
 	size_t len;
 	int s;
 
@@ -525,7 +605,8 @@ static int ps_asym_op_decrypt(struct op_ctx *opctx,
 		return ps_asym_op_decrypt_fwd(opctx, out, outlen, outsize,
 					      in, inlen);
 
-	if (asym_mechanism_prepare(opctx, &mech, &oaep_params) != OSSL_RV_OK) {
+	if (asym_mechanism_prepare(opctx, &mech, &oaep_params,
+				   &tls_params) != OSSL_RV_OK) {
 		ps_opctx_debug(opctx, "ERROR: asym_mechanism_prepare failed");
 		return OSSL_RV_ERR;
 	}
@@ -542,6 +623,17 @@ static int ps_asym_op_decrypt(struct op_ctx *opctx,
 	}
 
 	len = s;
+	if ((mech.mechanism == CKM_RSA_PKCS) && tls_params.padding)
+		len = SSL_MAX_MASTER_KEY_LENGTH;
+
+	if (!out) {
+		*outlen = len;
+		return OSSL_RV_OK;
+	}
+
+	if (outsize < len) {
+		return OSSL_RV_ERR;
+	}
 
 	if (pkcs11_decrypt_init(opctx->pctx->pkcs11, opctx->hsession,
 				&mech, opctx->hobject,
@@ -550,16 +642,24 @@ static int ps_asym_op_decrypt(struct op_ctx *opctx,
 		return OSSL_RV_ERR;
 	}
 
-	if (pkcs11_decrypt(opctx->pctx->pkcs11, opctx->hsession,
-			   in, inlen, out, &len,
-			   &opctx->pctx->dbg) != CKR_OK) {
-		ps_opctx_debug(opctx, "ERROR: pkcs11_decrypt() failed");
-		return OSSL_RV_ERR;
+	/* the following code must be const time */
+	good = 1;
+	if ((mech.mechanism == CKM_RSA_PKCS) && tls_params.padding) {
+		good &= ct_equals(asym_op_decrypt_tls(opctx, out, &len,
+						      in, inlen, &tls_params),
+				  CKR_OK);
+	} else {
+		good &= ct_equals(pkcs11_decrypt(opctx->pctx->pkcs11,
+						 opctx->hsession, in, inlen,
+						 out, &len, &opctx->pctx->dbg),
+				  CKR_OK);
 	}
-	*outlen = len;
 
-	ps_opctx_debug(opctx, "outlen: %lu", *outlen);
-	return OSSL_RV_OK;
+	*outlen = len;
+	good = !!good;
+
+	ps_opctx_debug(opctx, "good: %lu, outlen: %lu", good, *outlen);
+	return rv[good];
 }
 
 static void *ps_asym_rsa_newctx(void *vprovctx)
