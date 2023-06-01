@@ -111,6 +111,13 @@ struct op_ctx {
 	/* fwd */
 	void *fwd_op_ctx;
 	void (*fwd_op_ctx_free)(void *);
+
+	/* rsa tls padding */
+	struct {
+		bool tls_padding;
+		unsigned int client_version;
+		unsigned int alt_version;
+	} rsa;
 };
 #define ps_opctx_debug(opctx, fmt...)	ps_dbg_debug(&(opctx->pctx->dbg), fmt)
 
