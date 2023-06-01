@@ -410,20 +410,11 @@ CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 		     unsigned char *data, size_t *datalen,
 		     struct dbg *dbg)
 {
-	CK_RV ck_rv;
-
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
-	ck_rv = pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
-				       data, datalen);
-	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_Decrypt() failed: %d",
-			     pkcs11->soname, ck_rv);
-		return ck_rv;
-	}
-
-	return CKR_OK;
+	return pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
+				      data, datalen);
 }
 
 CK_RV pkcs11_decrypt_update(struct pkcs11_module *pkcs11,
