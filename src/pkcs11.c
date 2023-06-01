@@ -433,6 +433,7 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 	*attributes = attrs;
 	*nattributes = nattrs;
 
+	pkcs11_attrs_deepfree(template, nattrs);
 	return CKR_OK;
 
 err:
@@ -514,6 +515,8 @@ CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 	}
 
 	while (1) {
+		CK_OBJECT_HANDLE_PTR new_objs;
+
 		rv = pkcs11->fns->C_FindObjects(session, tmp, OBJ_PER_SEARCH,
 						&ntmp);
 		if (rv != CKR_OK) {
@@ -527,12 +530,14 @@ CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 		if (!ntmp)
 			break;
 
-		objs = OPENSSL_realloc(objs, ntmp * sizeof(CK_OBJECT_HANDLE));
-		if (!objs) {
+		new_objs = OPENSSL_realloc(objs, ntmp * sizeof(CK_OBJECT_HANDLE));
+		if (!new_objs) {
 			nobjs = 0;
 			rv = CKR_HOST_MEMORY;
 			goto out;
 		}
+		objs = new_objs;
+
 		/* append found objects */
 		memcpy(&objs[nobjs], tmp, ntmp * sizeof(CK_OBJECT_HANDLE));
 		nobjs += ntmp;
@@ -616,7 +621,7 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 		return ck_rv;
 	}
 
-	sl = OPENSSL_malloc(nsl);
+	sl = OPENSSL_malloc(nsl * sizeof(CK_SLOT_ID));
 	if (!sl) {
 		ps_dbg_error(dbg, "%s: slot-list allocation failed: nsl = %lu",
 			     pkcs11->soname, nsl);
@@ -710,7 +715,7 @@ struct pkcs11_module *pkcs11_module_new(const char *module,
 
 	dlerror();
 	pkcs->dlhandle = dlopen(module,
-				RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+				RTLD_NOW | RTLD_LOCAL);
 	if (!pkcs->dlhandle) {
 		err = dlerror();
 		ps_dbg_error(dbg, "%s: dlopen() failed: %s",
