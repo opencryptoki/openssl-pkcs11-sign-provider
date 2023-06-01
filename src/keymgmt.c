@@ -75,11 +75,11 @@ static void *keymgmt_fwd_new(struct provider_ctx *pctx, int type)
 static int keymgmt_fetch_pki(struct obj *key)
 {
 	OSSL_FUNC_keymgmt_import_fn *fwd_import_fn;
-	OSSL_PARAM *params;
-	EVP_PKEY *pkey;
+	int selection, rv = OSSL_RV_OK;
+	OSSL_PARAM *params = NULL;
+	EVP_PKEY *pkey = NULL;
 	CK_BYTE_PTR pki;
 	CK_ULONG pkilen;
-	int selection;
 
 	if (obj_get_pub_key_info(key, &pki, &pkilen) != OSSL_RV_OK) {
 		ps_obj_debug(key, "key: %p, no public_key_info available",
@@ -100,7 +100,8 @@ static int keymgmt_fetch_pki(struct obj *key)
 	if (EVP_PKEY_todata(pkey, selection, &params) != OSSL_RV_OK) {
 		ps_obj_debug(key, "key: %p, unable to get params",
 			     key);
-		return OSSL_RV_ERR;
+		rv = OSSL_RV_ERR;
+		goto out;
 	}
 
 	fwd_import_fn = (OSSL_FUNC_keymgmt_import_fn *)
@@ -110,16 +111,21 @@ static int keymgmt_fetch_pki(struct obj *key)
 	if (fwd_import_fn == NULL) {
 		ps_obj_debug(key, "key: %p, no fwd_import_fn",
 			     key);
-		return OSSL_RV_ERR;
+		rv = OSSL_RV_ERR;
+		goto out;
 	}
 
 	if (fwd_import_fn(key->fwd_key, selection, params) != OSSL_RV_OK) {
 		put_error_key(key, PS_ERR_DEFAULT_PROV_FUNC_FAILED,
 			      "fwd_import_fn failed");
-		return OSSL_RV_ERR;
+		rv = OSSL_RV_ERR;
+		goto out;
 	}
 
-	return OSSL_RV_OK;
+out:
+	EVP_PKEY_free(pkey);
+	OSSL_PARAM_free(params);
+	return rv;
 }
 
 static struct obj *keymgmt_new(struct provider_ctx *pctx,
