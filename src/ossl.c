@@ -43,6 +43,24 @@ const OSSL_ITEM ps_prov_reason_strings[] = {
 	{0, NULL }
 };
 
+static struct {
+	const char *name;
+	int size;
+} name_size_map [] = {
+	/* digest */
+	{ "sha-1",        20 }, { "sha1",        20 },
+	{ "sha2-224",     28 }, { "sha-224",     28 }, { "sha224",     28 },
+	{ "sha2-256",     32 }, { "sha-256",     32 }, { "sha256",     32 },
+	{ "sha2-384",     48 }, { "sha-384",     48 }, { "sha384",     48 },
+	{ "sha2-512",     64 }, { "sha-512",     64 }, { "sha512",     64 },
+	{ "sha2-512/224", 28 }, { "sha-512/224", 28 }, { "sha512-224", 28 },
+	{ "sha2-512/256", 32 }, { "sha-512/256", 32 }, { "sha512-256", 32 },
+	{ "sha3-224"    , 28 },
+	{ "sha3-256"    , 32 },
+	{ "sha3-384"    , 48 },
+	{ "sha3-512"    , 64 },
+};
+
 static const unsigned char der_DigestInfo_SHA1[] = {
 	0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e,
 	0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14, };
@@ -78,6 +96,21 @@ static const unsigned char der_DigestInfo_SHA3_512[] = {
 	0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
 	0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a, 0x05,
 	0x00, 0x04, 0x40, };
+
+int size_by_name(const char *name, int *size)
+{
+	size_t i, nelem = sizeof(name_size_map) / sizeof(*name_size_map);
+
+	for (i = 0; i < nelem; i++) {
+		if (OPENSSL_strcasecmp(name, name_size_map[i].name) != 0)
+			continue;
+
+		*size = name_size_map[i].size;
+		return OSSL_RV_OK;
+	}
+
+	return OSSL_RV_ERR;
+}
 
 int ossl_hash_prefix(EVP_MD_CTX *mdctx, unsigned char *p, unsigned int *size)
 {

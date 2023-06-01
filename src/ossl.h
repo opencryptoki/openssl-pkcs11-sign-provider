@@ -42,6 +42,7 @@ extern const OSSL_ITEM ps_prov_reason_strings[];
 
 #define DER_DIGESTINFO_MAX			19 /* see der_DigestInfo_* */
 
+int size_by_name(const char *name, int *size);
 int ossl_hash_prefix(EVP_MD_CTX *mdctx, unsigned char *p, unsigned int *size);
 int ossl_ecdsa_signature(const unsigned char *raw_sig, size_t raw_siglen,
 			 unsigned char *sig, size_t *siglen);
