@@ -334,6 +334,7 @@ static int lookup_objects(struct store_ctx *sctx)
 	struct pkcs11_module *pkcs11 = sctx->pkcs11;
 	struct parsed_uri *puri = sctx->puri;
 	CK_OBJECT_HANDLE_PTR handles = NULL;
+	int rv = OSSL_RV_ERR;
 	CK_ULONG nhandles;
 	CK_RV ck_rv;
 
@@ -374,12 +375,16 @@ static int lookup_objects(struct store_ctx *sctx)
 	}
 
 	sctx->load_idx = 0;
-	return load_object_handles(sctx, handles, nhandles);
+	if (load_object_handles(sctx, handles, nhandles) != OSSL_RV_OK) {
+		ps_dbg_error(dbg, "sctx: %p, slot %d failed to load object handles",
+			     sctx, sctx->slot_id);
+		goto err;
+	}
 
+	rv = OSSL_RV_OK;
 err:
 	OPENSSL_free(handles);
-	return OSSL_RV_ERR;
-
+	return rv;
 }
 
 static void ps_store_ctx_free(struct store_ctx *sctx)
@@ -394,6 +399,7 @@ static void ps_store_ctx_free(struct store_ctx *sctx)
 	for (i = 0; i < sctx->nobjects; i++) {
 		obj_free(sctx->objects[i]);
 	}
+	OPENSSL_free(sctx->objects);
 	OPENSSL_free(sctx);
 }
 
