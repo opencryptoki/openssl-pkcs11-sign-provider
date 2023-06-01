@@ -341,46 +341,6 @@ CK_RV pkcs11_sign(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 }
 
-CK_RV pkcs11_sign_update(struct pkcs11_module *pkcs11,
-			 CK_SESSION_HANDLE hsession,
-			 unsigned char *data, size_t datalen,
-			 struct dbg *dbg)
-{
-	CK_RV ck_rv;
-
-	if (!pkcs11 || !dbg)
-		return CKR_ARGUMENTS_BAD;
-
-	ck_rv = pkcs11->fns->C_SignUpdate(hsession, data, datalen);
-	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_SignUpdate() failed: %d",
-			     pkcs11->soname, ck_rv);
-		return ck_rv;
-	}
-
-	return CKR_OK;
-}
-
-CK_RV pkcs11_sign_final(struct pkcs11_module *pkcs11,
-			CK_SESSION_HANDLE hsession,
-			unsigned char *sig, size_t *siglen,
-			struct dbg *dbg)
-{
-	CK_RV ck_rv;
-
-	if (!pkcs11 || !dbg)
-		return CKR_ARGUMENTS_BAD;
-
-	ck_rv = pkcs11->fns->C_SignFinal(hsession, sig, siglen);
-	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_SignFinal() failed: %d",
-			     pkcs11->soname, ck_rv);
-		return ck_rv;
-	}
-
-	return CKR_OK;
-}
-
 CK_RV pkcs11_decrypt_init(struct pkcs11_module *pkcs11,
 			  CK_SESSION_HANDLE hsession, CK_MECHANISM_PTR mech,
 			  CK_OBJECT_HANDLE hkey, struct dbg *dbg)
@@ -415,48 +375,6 @@ CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 
 	return pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
 				      data, datalen);
-}
-
-CK_RV pkcs11_decrypt_update(struct pkcs11_module *pkcs11,
-			    CK_SESSION_HANDLE hsession,
-			    unsigned char *cpdata, size_t cpdatalen,
-			    unsigned char *pdata, size_t *pdatalen,
-			    struct dbg *dbg)
-{
-	CK_RV ck_rv;
-
-	if (!pkcs11 || !dbg)
-		return CKR_ARGUMENTS_BAD;
-
-	ck_rv = pkcs11->fns->C_DecryptUpdate(hsession, cpdata, cpdatalen,
-					     pdata, pdatalen);
-	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_DecryptUpdate() failed: %d",
-			     pkcs11->soname, ck_rv);
-		return ck_rv;
-	}
-
-	return CKR_OK;
-}
-
-CK_RV pkcs11_decrypt_final(struct pkcs11_module *pkcs11,
-			   CK_SESSION_HANDLE hsession,
-			   unsigned char *pdata, size_t *pdatalen,
-		    struct dbg *dbg)
-{
-	CK_RV ck_rv;
-
-	if (!pkcs11 || !dbg)
-		return CKR_ARGUMENTS_BAD;
-
-	ck_rv = pkcs11->fns->C_DecryptFinal(hsession, pdata, pdatalen);
-	if (ck_rv != CKR_OK) {
-		ps_dbg_error(dbg, "%s: C_DecryptFinal() failed: %d",
-			     pkcs11->soname, ck_rv);
-		return ck_rv;
-	}
-
-	return CKR_OK;
 }
 
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
