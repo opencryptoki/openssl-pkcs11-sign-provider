@@ -29,6 +29,9 @@ The tests require a working opencryptoki setup. By default, the all keys are
 stored in the token `softtok` in slot `3`. The setup script uses the PIN
 `12345678` by default.
 
+The setup script for the ock module uses `p11tool` for importing the keys,
+so a working p11-kit setup for opencryptoki is also required.
+
 To setup and run the tests with the default settings for opencryptoki,
 use the following commands:
 
@@ -74,6 +77,24 @@ is set, the provider will write debug output to a log-file.
 
 The environment variable `PKCS11SIGN_DEBUG_LEVEL` specifies the
 log-level error (`0`), warning (`1`), info (`2`) or debug (`3`).
+
+### p11-kit setup for opencryptoki
+
+To make opencryptoki available for application, which uses the p11-kit
+configuration, the shared object file of the opencryptoki PKCS\#11 API
+should be added as a module configuration to the p11-kit configuration.
+
+```
+cat << EOF > /usr/share/p11-kit/modules/ock.module
+module: /path/to/libopencryptoki.so.0
+EOF
+```
+
+The following command should now also list the opencryptoki tokens:
+
+```
+p11tool --list-token-urls
+```
 
 ## Install
 
