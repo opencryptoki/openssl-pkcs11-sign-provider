@@ -838,11 +838,26 @@ static int ps_signature_op_sign(void *vopctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify_init_fwd(struct op_ctx *opctx,
-					   struct obj *key,
-					   const OSSL_PARAM params[])
+static int ps_signature_op_verify_init(void *vopctx, void *vkey,
+				       const OSSL_PARAM params[])
 {
 	OSSL_FUNC_signature_verify_init_fn *fwd_verify_init_fn;
+	struct op_ctx *opctx = vopctx;
+	struct obj *key = vkey;
+	const OSSL_PARAM *p;
+
+	if (!opctx || !key)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p",
+		       opctx, key);
+	for (p = params; p && p->key; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
+
+	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY)) {
+		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
+		return OSSL_RV_ERR;
+	}
 
 	fwd_verify_init_fn = (OSSL_FUNC_signature_verify_init_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
@@ -865,9 +880,11 @@ static int ps_signature_op_verify_init_fwd(struct op_ctx *opctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify_init(void *vopctx, void *vkey,
-				       const OSSL_PARAM params[])
+static int ps_signature_op_verify_recover_init(void *vopctx, void *vkey,
+					       const OSSL_PARAM params[])
 {
+	OSSL_FUNC_signature_verify_recover_init_fn
+					*fwd_verify_recover_init_fn;
 	struct op_ctx *opctx = vopctx;
 	struct obj *key = vkey;
 	const OSSL_PARAM *p;
@@ -875,33 +892,14 @@ static int ps_signature_op_verify_init(void *vopctx, void *vkey,
 	if (!opctx || !key)
 		return OSSL_RV_ERR;
 
-	ps_opctx_debug(opctx, "opctx: %p key: %p",
-		       opctx, key);
+	ps_opctx_debug(opctx, "opctx: %p key: %p", opctx, key);
 	for (p = params; p && p->key; p++)
 		ps_opctx_debug(opctx, "param: %s", p->key);
 
-	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY)) {
+	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFYRECOVER)) {
 		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
 		return OSSL_RV_ERR;
 	}
-
-	if (ps_signature_op_verify_init_fwd(opctx, key, params) != OSSL_RV_OK)
-		return OSSL_RV_ERR;
-
-	if (!key->use_pkcs11)
-		return OSSL_RV_OK;
-
-	/* TODO implementation for pkcs11 */
-	return OSSL_RV_ERR;
-
-}
-
-static int ps_signature_op_verify_recover_init_fwd(struct op_ctx *opctx,
-						   struct obj *key,
-						   const OSSL_PARAM params[])
-{
-	OSSL_FUNC_signature_verify_recover_init_fn
-					*fwd_verify_recover_init_fn;
 
 	fwd_verify_recover_init_fn =
 		(OSSL_FUNC_signature_verify_recover_init_fn *)
@@ -925,41 +923,18 @@ static int ps_signature_op_verify_recover_init_fwd(struct op_ctx *opctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify_recover_init(void *vopctx, void *vkey,
-					       const OSSL_PARAM params[])
-{
-	struct op_ctx *opctx = vopctx;
-	struct obj *key = vkey;
-	const OSSL_PARAM *p;
-
-	if (!opctx || !key)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p", opctx, key);
-	for (p = params; p && p->key; p++)
-		ps_opctx_debug(opctx, "param: %s", p->key);
-
-	if (!op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFYRECOVER)) {
-		ps_opctx_debug(opctx, "ERROR: ps_op_init failed");
-		return OSSL_RV_ERR;
-	}
-
-	if (ps_signature_op_verify_recover_init_fwd(opctx, key,
-						    params) != OSSL_RV_OK)
-		return OSSL_RV_ERR;
-
-	if (!opctx->key->use_pkcs11)
-		return OSSL_RV_OK;
-
-	/* TODO implementation for pkcs11 */
-	return OSSL_RV_ERR;
-}
-
-static int ps_signature_op_verify_fwd(struct op_ctx *opctx,
-				      const unsigned char *sig, size_t siglen,
-				      const unsigned char *tbs, size_t tbslen)
+static int ps_signature_op_verify(void *vopctx,
+				  const unsigned char *sig, size_t siglen,
+				  const unsigned char *tbs, size_t tbslen)
 {
 	OSSL_FUNC_signature_verify_fn *fwd_verify_fn;
+	struct op_ctx *opctx = vopctx;
+
+	if (!opctx || !tbs || !sig)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p tbslen: %lu siglen: %lu",
+			opctx, opctx->key, tbslen, siglen);
 
 	fwd_verify_fn = (OSSL_FUNC_signature_verify_fn *)
 			fwd_sign_get_func(&opctx->pctx->fwd,
@@ -980,32 +955,20 @@ static int ps_signature_op_verify_fwd(struct op_ctx *opctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_verify(void *vopctx,
-				  const unsigned char *sig, size_t siglen,
-				  const unsigned char *tbs, size_t tbslen)
-{
-	struct op_ctx *opctx = vopctx;
-
-	if (!opctx || !tbs || !sig)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p tbslen: %lu siglen: %lu",
-			opctx, opctx->key, tbslen, siglen);
-
-	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_verify_fwd(opctx, sig, siglen, tbs, tbslen);
-
-	/* TODO implementation for pkcs11 */
-	return OSSL_RV_ERR;
-}
-
-static int ps_signature_op_verify_recover_fwd(struct op_ctx *opctx,
-					      unsigned char *rout, size_t *routlen,
-					      size_t routsize,
-					      const unsigned char *sig,
-					      size_t siglen)
+static int ps_signature_op_verify_recover(void *vopctx,
+					  unsigned char *rout, size_t *routlen,
+					  size_t routsize,
+					  const unsigned char *sig,
+					  size_t siglen)
 {
 	OSSL_FUNC_signature_verify_recover_fn *fwd_verify_recover_fn;
+	struct op_ctx *opctx = vopctx;
+
+	if (!opctx || !routlen || !sig)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p routsize: %lu siglen: %lu",
+		       opctx, opctx->key, routsize, siglen);
 
 	fwd_verify_recover_fn =
 		(OSSL_FUNC_signature_verify_recover_fn *)
@@ -1028,28 +991,6 @@ static int ps_signature_op_verify_recover_fwd(struct op_ctx *opctx,
 	ps_opctx_debug(opctx, "routlen: %lu", *routlen);
 
 	return OSSL_RV_OK;
-}
-
-static int ps_signature_op_verify_recover(void *vopctx,
-					  unsigned char *rout, size_t *routlen,
-					  size_t routsize,
-					  const unsigned char *sig,
-					  size_t siglen)
-{
-	struct op_ctx *opctx = vopctx;
-
-	if (!opctx || !routlen || !sig)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p routsize: %lu siglen: %lu",
-		       opctx, opctx->key, routsize, siglen);
-
-	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_verify_recover_fwd(opctx, rout, routlen,
-							  routsize, sig, siglen);
-
-	/* TODO implementation for pkcs11 */
-	return OSSL_RV_ERR;
 }
 
 static int ps_signature_op_digest_sign_init_fwd(struct op_ctx *opctx,
@@ -1183,7 +1124,8 @@ static int ps_signature_op_digest_sign_update(void *vctx,
 		       opctx->key, datalen);
 
 	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_digest_sign_update_fwd(opctx, data, datalen);
+		return ps_signature_op_digest_sign_update_fwd(opctx, data,
+							      datalen);
 
 	if (!opctx->mdctx) {
 		put_error_op_ctx(opctx, PS_ERR_OPRATION_NOT_INITIALIZED,
@@ -1201,8 +1143,8 @@ static int ps_signature_op_digest_sign_update(void *vctx,
 }
 
 static int ps_signature_op_digest_sign_final_fwd(struct op_ctx *opctx,
-						 unsigned char *sig, size_t *siglen,
-						 size_t sigsize)
+						 unsigned char *sig,
+						 size_t *siglen, size_t sigsize)
 {
 	OSSL_FUNC_signature_digest_sign_final_fn *fwd_digest_sign_final_fn;
 
@@ -1338,12 +1280,27 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_digest_verify_init_fwd(struct op_ctx *opctx,
-						  const char *mdname,
-						  struct obj *key,
-						  const OSSL_PARAM params[])
+static int ps_signature_op_digest_verify_init(void *vctx, const char *mdname,
+					      void *vkey,
+					      const OSSL_PARAM params[])
 {
 	OSSL_FUNC_signature_digest_verify_init_fn *fwd_digest_verify_init_fn;
+	struct op_ctx *opctx = vctx;
+	struct obj *key = vkey;
+	const OSSL_PARAM *p;
+
+	if (!opctx || !key)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p", opctx,
+			mdname != NULL ? mdname : "", key);
+	for (p = params; p != NULL && p->key != NULL; p++)
+		ps_opctx_debug(opctx, "param: %s", p->key);
+
+	if (op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY) != OSSL_RV_OK) {
+		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
+		return OSSL_RV_ERR;
+	}
 
 	fwd_digest_verify_init_fn = (OSSL_FUNC_signature_digest_verify_init_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
@@ -1365,45 +1322,18 @@ static int ps_signature_op_digest_verify_init_fwd(struct op_ctx *opctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_digest_verify_init(void *vctx,
-					      const char *mdname,
-					      void *vkey,
-					      const OSSL_PARAM params[])
-{
-	struct op_ctx *opctx = vctx;
-	struct obj *key = vkey;
-	const OSSL_PARAM *p;
-
-	if (!opctx || !key)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p mdname: %s key: %p", opctx,
-			mdname != NULL ? mdname : "", key);
-	for (p = params; p != NULL && p->key != NULL; p++)
-		ps_opctx_debug(opctx, "param: %s", p->key);
-
-	if (op_ctx_init(opctx, key, EVP_PKEY_OP_VERIFY) != OSSL_RV_OK) {
-		ps_opctx_debug(opctx, "ERROR: op_ctx_init() failed");
-		return OSSL_RV_ERR;
-	}
-
-	if (ps_signature_op_digest_verify_init_fwd(opctx, mdname,
-						   opctx->key,
-						   params) != OSSL_RV_OK)
-		return OSSL_RV_ERR;
-
-	if (!opctx->key->use_pkcs11)
-		return OSSL_RV_OK;
-
-	/* not supported for pkcs11 */
-	return OSSL_RV_ERR;
-}
-
-static int ps_signature_op_digest_verify_update_fwd(struct op_ctx *opctx,
+static int ps_signature_op_digest_verify_update(void *vctx,
 						    const unsigned char *data,
 						    size_t datalen)
 {
 	OSSL_FUNC_signature_digest_verify_update_fn *fwd_digest_verify_update_fn;
+	struct op_ctx *opctx = vctx;
+
+	if (!opctx)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p datalen: %lu", opctx, opctx->key,
+			datalen);
 
 	fwd_digest_verify_update_fn =
 		(OSSL_FUNC_signature_digest_verify_update_fn *)
@@ -1426,30 +1356,18 @@ static int ps_signature_op_digest_verify_update_fwd(struct op_ctx *opctx,
 	return OSSL_RV_OK;
 }
 
-static int ps_signature_op_digest_verify_update(void *vctx,
-						const unsigned char *data,
-						size_t datalen)
-{
-	struct op_ctx *opctx = vctx;
-
-	if (!opctx)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p datalen: %lu", opctx, opctx->key,
-			datalen);
-
-	if (!opctx->key->use_pkcs11)
-		return  ps_signature_op_digest_verify_update_fwd(opctx, data, datalen);
-
-	/* not supported for pkcs11 */
-	return OSSL_RV_ERR;
-}
-
-static int ps_signature_op_digest_verify_final_fwd(struct op_ctx *opctx,
-						   const unsigned char *sig,
-						   size_t siglen)
+static int ps_signature_op_digest_verify_final(void *vctx,
+					       const unsigned char *sig,
+					       size_t siglen)
 {
 	OSSL_FUNC_signature_digest_verify_final_fn *fwd_digest_verify_final_fn;
+	struct op_ctx *opctx = vctx;
+
+	if (!opctx || sig == NULL)
+		return OSSL_RV_ERR;
+
+	ps_opctx_debug(opctx, "opctx: %p key: %p siglen: %lu", opctx, opctx->key,
+			siglen);
 
 	fwd_digest_verify_final_fn = (OSSL_FUNC_signature_digest_verify_final_fn *)
 		fwd_sign_get_func(&opctx->pctx->fwd, opctx->type,
@@ -1468,25 +1386,6 @@ static int ps_signature_op_digest_verify_final_fwd(struct op_ctx *opctx,
 	}
 
 	return OSSL_RV_OK;
-}
-
-static int ps_signature_op_digest_verify_final(void *vctx,
-					       const unsigned char *sig,
-					       size_t siglen)
-{
-	struct op_ctx *opctx = vctx;
-
-	if (!opctx || sig == NULL)
-		return OSSL_RV_ERR;
-
-	ps_opctx_debug(opctx, "opctx: %p key: %p siglen: %lu", opctx, opctx->key,
-			siglen);
-
-	if (!opctx->key->use_pkcs11)
-		return ps_signature_op_digest_verify_final_fwd(opctx, sig, siglen);
-
-	/* not supported for pkcs11 */
-	return OSSL_RV_ERR;
 }
 
 #define DISP_SIG(tname, name) DECL_DISPATCH_FUNC(signature, tname, name)
