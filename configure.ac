@@ -5,7 +5,7 @@
 
 AC_PREREQ([2.71])
 AC_INIT([openssl-pkcs11-sign-provider],
-	[0.0.1],
+	[1.0.0],
 	[https://github.com/opencryptoki/openssl-pkcs11-sign-provider/issues]
 )
 
