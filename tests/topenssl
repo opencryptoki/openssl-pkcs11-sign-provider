@@ -81,7 +81,7 @@ echo "## encrypt data (no padding)"
 ossl '
 pkeyutl -encrypt -pkeyopt rsa_padding_mode:none
         -pubin -inkey "${FILE_PEM_RSA4K_PUB}"
-        -in  "${TMPPDIR}/random-512.bin"
+        -in  "${TMPPDIR}/raw-512.bin"
         -out "${TMPPDIR}/data.enc"' \
 || exit 99
 
@@ -94,7 +94,7 @@ pkeyutl -decrypt -pkeyopt rsa_padding_mode:none
 || exit 99
 
 echo "## compare clear-text results (no padding)"
-diff -q "${TMPPDIR}/random-512.bin" "${TMPPDIR}/data.dec" \
+diff -q "${TMPPDIR}/raw-512.bin" "${TMPPDIR}/data.dec" \
 || exit 99
 echo "diff: identical results (no padding)"
 rm -f "${TMPPDIR}/data.enc" "${TMPPDIR}/data.dec"
