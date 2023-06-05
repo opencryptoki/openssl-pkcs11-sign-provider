@@ -115,6 +115,24 @@ EOF
 
 generate_payload() {
 	for length in 256 512; do
+		DATA="${TMPPDIR}/raw-${length}.bin"
+		part_len=$((${length} / 2))
+
+		dd if=/dev/zero					\
+		   of="${DATA}"					\
+		   bs=1 count="${part_len}"
+
+		cat "${DATA}"					\
+		| tr '\000' '\377'				\
+		>> "${DATA}"
+
+		openssl sha256					\
+			-binary					\
+			-out "${DATA}.sha256"			\
+			"${DATA}"
+	done
+
+	for length in 256 512; do
 		DATA="${TMPPDIR}/random-${length}.bin"
 
 		dd if=/dev/random				\
