@@ -11,6 +11,7 @@ tests/tmp.*
 tests/ttls
 tests/tsignature
 tests/tecdhe
+tests/tfork
 *.log
 *.trs
 
