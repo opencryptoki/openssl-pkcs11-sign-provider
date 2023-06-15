@@ -11,3 +11,4 @@
 void info(void);
 EVP_PKEY *uri_pkey_get1(const char *uri);
 void fdump(FILE *restrict stream, const unsigned char *p, size_t len);
+void child_propagate(void);

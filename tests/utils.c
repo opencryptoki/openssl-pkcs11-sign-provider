@@ -4,9 +4,14 @@
  */
 
 #include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
 #include <openssl/err.h>
 #include <openssl/store.h>
 #include "utils.h"
+
+#define FORK_CHILD	(0)
+#define FORK_FAIL	(-1)
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -88,4 +93,32 @@ void fdump(FILE *restrict stream, const unsigned char *p, size_t len)
 	}
 	if (len)
 		fprintf(stream, "\n");
+}
+
+void child_propagate(void)
+{
+	pid_t child_pid;
+	int child_rc = 0;
+
+	child_pid = fork();
+	switch (child_pid) {
+	case FORK_FAIL:
+		perror("fork");
+		exit(99);
+	case FORK_CHILD:
+		return;
+	default:
+		child_pid = wait(&child_rc);
+
+		if (child_pid < 0) {
+			perror("waitpid");
+			exit(99);
+		}
+
+		if (WIFEXITED(child_rc))
+			exit(WEXITSTATUS(child_rc));
+
+		perror("other");
+		exit(99);
+	};
 }

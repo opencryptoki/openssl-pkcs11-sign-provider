@@ -4,7 +4,7 @@
 libspath=@abs_top_builddir@/src/.libs
 testsdir=@abs_srcdir@
 
-check_PROGRAMS = ttls tsignature tecdhe
+check_PROGRAMS = ttls tsignature tecdhe tfork
 
 ttls_SOURCES = ttls.c utils.c utils.h
 ttls_CFLAGS = $(AM_CFLAGS) $(STD_CFLAGS) $(OPENSSL_CFLAGS)
@@ -18,6 +18,10 @@ tecdhe_SOURCES = tecdhe.c utils.c utils.h
 tecdhe_CFLAGS = $(AM_CFLAGS) $(STD_CFLAGS) $(OPENSSL_CFLAGS)
 tecdhe_LDADD = $(OPENSSL_LIBS)
 
+tfork_SOURCES = tfork.c utils.c utils.h
+tfork_CFLAGS = $(AM_CFLAGS) $(STD_CFLAGS) $(OPENSSL_CFLAGS)
+tfork_LDADD = $(OPENSSL_LIBS)
+
 setup_scripts =
 setup_scripts += helpers.sh
 setup_scripts += setup-ock.sh
@@ -27,7 +31,7 @@ tmp.ock:
 	TESTSDIR=$(testsdir) \
 	$(testsdir)/setup-ock.sh > setup-ock.log 2>&1
 
-TESTS = openssl-ock tls-ock signature-ock ecdhe-ock
+TESTS = openssl-ock tls-ock signature-ock ecdhe-ock fork-ock
 
 $(TESTS): tmp.ock
 
