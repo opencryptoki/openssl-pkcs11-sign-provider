@@ -4,8 +4,6 @@ This repository provides the implementation of an OpenSSL Provider for
 asymmetric operations with private PKCS\#11 keys. Requests with other key
 material will be forwarded to an OpenSSL built-in provider.
 
-This provider is a prove-of-concept at the current state.
-
 ## Build
 
 This project requires OpenSSL 3.0 or later, as well as opencryptoki.
@@ -80,7 +78,7 @@ log-level error (`0`), warning (`1`), info (`2`) or debug (`3`).
 
 ### p11-kit setup for opencryptoki
 
-To make opencryptoki available for application, which uses the p11-kit
+To make opencryptoki available for applications using the p11-kit
 configuration, the shared object file of the opencryptoki PKCS\#11 API
 should be added as a module configuration to the p11-kit configuration.
 
