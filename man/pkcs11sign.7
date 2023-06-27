@@ -9,7 +9,7 @@ provides cryptographic operation on asymmetric key material, available in
 PKCS#11 infrastructure (e.g. opencryptoki). The pkcs11-sign-provider will
 register a key storage for PKCS#11 URIs (RFC 7512). All keys which are
 referenced by a PKCS#11 URI will be handled by the pkcs11-sign-provider.
-Other keys (e.g.  file-based) are are forwarded by the pkcs11-sign-provider
+Other keys (e.g.  file-based) are forwarded by the pkcs11-sign-provider
 to another OpenSSL-Provider, e.g. the built-in OpenSSL default provider.
 .PP
 The pkcs11-sign-provider will only process algorithms with existing
@@ -91,7 +91,7 @@ file, which contains the PIN. It is highly recommended to use the file
 reference and set the access permissions of the PIN file accordingly.
 .PP
 .SS PIN file
-The PIN gives access to a PKCS#11 token and its objects (keys, certificated,
+The PIN gives access to a PKCS#11 token and its objects (keys, certificates,
 data). It should be treated as a secret information and only the application
 should have access to it. With the right setup, the usage of a PIN file
 provides the best protection for the PIN.
