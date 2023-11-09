@@ -651,7 +651,7 @@ static void module_teardown(struct pkcs11_module *pkcs)
 	if (pkcs->state != PKCS11_INITIALIZED)
 		return;
 
-	if (pkcs->fns) {
+	if (pkcs->do_finalize && pkcs->fns) {
 		pkcs->fns->C_Finalize(NULL);
 		pkcs->fns = NULL;
 	}
@@ -740,11 +740,12 @@ struct pkcs11_module *pkcs11_module_new(const char *module,
 	}
 
 	ck_rv = pkcs->fns->C_Initialize(&args);
-	if (ck_rv != CKR_OK) {
+	if (ck_rv != CKR_OK && ck_rv != CKR_CRYPTOKI_ALREADY_INITIALIZED) {
 		ps_dbg_error(dbg, "%s: C_Initialize(%s) failed: %d",
 			     pkcs->soname, module_initargs, ck_rv);
 		goto close_err;
 	}
+	pkcs->do_finalize = (ck_rv == CKR_OK);
 
 	pkcs->state = PKCS11_INITIALIZED;
 	module_info(pkcs, dbg);

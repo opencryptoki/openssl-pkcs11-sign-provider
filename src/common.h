@@ -38,6 +38,7 @@ struct pkcs11_module {
 		PKCS11_INITIALIZED,
 	} state;
 	unsigned int refcnt;
+	bool do_finalize;
 };
 
 struct ossl_provider {
