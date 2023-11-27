@@ -261,13 +261,18 @@ void pkcs11_attrs_deepfree(CK_ATTRIBUTE_PTR attributes, CK_ULONG nattributes)
 
 CK_RV pkcs11_attr_dup(const CK_ATTRIBUTE_PTR src, CK_ATTRIBUTE_PTR dst)
 {
-	if (!src || !dst ||
-	    !src->pValue || !src->ulValueLen)
+	if (!src || !dst)
 		return CKR_ARGUMENTS_BAD;
 
-	dst->pValue = OPENSSL_memdup(src->pValue, src->ulValueLen);
-	if (!dst->pValue)
-		return CKR_HOST_MEMORY;
+	if (src->ulValueLen > 0) {
+		if (!src->pValue)
+			return CKR_ARGUMENTS_BAD;
+		dst->pValue = OPENSSL_memdup(src->pValue, src->ulValueLen);
+		if (!dst->pValue)
+			return CKR_HOST_MEMORY;
+	} else {
+		dst->pValue = NULL;
+	}
 
 	dst->type = src->type;
 	dst->ulValueLen = src->ulValueLen;
