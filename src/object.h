@@ -17,6 +17,6 @@ CK_OBJECT_CLASS obj_get_class(const struct obj *obj);
 
 void obj_free(struct obj *obj);
 struct obj *obj_get(struct obj *obj);
-struct obj *obj_new_init(struct provider_ctx *pctx, struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id, const char *pin);
+struct obj *obj_new_init(struct provider_ctx *pctx, CK_SLOT_ID slot_id, const char *pin);
 
 #endif /* _PKCS11SIGN_OBJECT_H */

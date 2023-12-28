@@ -136,7 +136,7 @@ static struct obj *keymgmt_new(struct provider_ctx *pctx,
 	ps_pctx_debug(pctx, "pctx: %p, type: %d",
 		      pctx, type);
 
-	key = obj_new_init(pctx, NULL, CK_UNAVAILABLE_INFORMATION, NULL);
+	key = obj_new_init(pctx, CK_UNAVAILABLE_INFORMATION, NULL);
 	if (!key) {
 		put_error_pctx(pctx, PS_ERR_MALLOC_FAILED,
 			       "OPENSSL_zalloc failed");
@@ -725,7 +725,7 @@ static void *ps_keymgmt_gen(void *vgenctx,
 		return NULL;
 	}
 
-	key = obj_new_init(octx->pctx, NULL, CK_UNAVAILABLE_INFORMATION, NULL);
+	key = obj_new_init(octx->pctx, CK_UNAVAILABLE_INFORMATION, NULL);
 	if (!key) {
 		put_error_op_ctx(octx, PS_ERR_MALLOC_FAILED,
 				 "OPENSSL_zalloc failed");

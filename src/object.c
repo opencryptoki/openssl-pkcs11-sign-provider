@@ -92,8 +92,6 @@ static void _obj_free(struct obj *obj)
 	if (obj->pin)
 		OPENSSL_cleanse(obj->pin, sizeof(obj->pin));
 
-	pkcs11_module_free(obj->pkcs11);
-
 	OPENSSL_free(obj->pin);
 	pkcs11_attrs_deepfree(obj->attrs, obj->nattrs);
 	OPENSSL_free(obj->attrs);
@@ -120,7 +118,7 @@ struct obj *obj_get(struct obj *obj)
 	return obj;
 }
 
-struct obj *obj_new_init(struct provider_ctx *pctx, struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id, const char *pin)
+struct obj *obj_new_init(struct provider_ctx *pctx, CK_SLOT_ID slot_id, const char *pin)
 {
 	struct obj *obj;
 
@@ -129,7 +127,6 @@ struct obj *obj_new_init(struct provider_ctx *pctx, struct pkcs11_module *pkcs11
 		return NULL;
 
 	obj->pctx = pctx;
-	obj->pkcs11 = pkcs11_module_get(pkcs11);
 	obj->slot_id = slot_id;
 	if (pin)
 		obj->pin = OPENSSL_strdup(pin);
