@@ -83,7 +83,6 @@ struct obj {
 
 	/* pkcs11 */
 	bool use_pkcs11;
-	struct pkcs11_module *pkcs11;
 	CK_SLOT_ID slot_id;
 	char *pin;
 	CK_ATTRIBUTE_PTR attrs;

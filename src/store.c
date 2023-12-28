@@ -235,7 +235,6 @@ static int load_object_handles(struct store_ctx *sctx,
 {
 	struct provider_ctx *pctx = sctx->pctx;
 	struct dbg *dbg = &pctx->dbg;
-	struct pkcs11_module *pkcs11 = sctx->pkcs11;
 	struct obj **objs;
 	CK_ULONG nobjs, i;
 
@@ -245,8 +244,7 @@ static int load_object_handles(struct store_ctx *sctx,
 	nobjs = nhandles;
 
 	for (i = 0; i < nhandles; i++) {
-		objs[i] = obj_new_init(pctx, pkcs11, sctx->slot_id,
-				       sctx->puri->pin);
+		objs[i] = obj_new_init(pctx, sctx->slot_id, sctx->puri->pin);
 		if (!objs[i]) {
 			goto err;
 		}
