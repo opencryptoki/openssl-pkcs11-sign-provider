@@ -265,12 +265,10 @@ void parsed_uri_free(struct parsed_uri *puri)
 		return;
 
 	if (puri->priv)
-		OPENSSL_cleanse(puri->priv, strlen(puri->priv));
-	OPENSSL_free(puri->priv);
+		OPENSSL_clear_free(puri->priv, strlen(puri->priv));
 
 	if (puri->pin)
-		OPENSSL_cleanse(puri->pin, strlen(puri->pin));
-	OPENSSL_free(puri->pin);
+		OPENSSL_clear_free(puri->pin, strlen(puri->pin));
 
 	OPENSSL_free(puri);
 }
