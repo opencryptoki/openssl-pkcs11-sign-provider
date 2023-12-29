@@ -697,9 +697,9 @@ struct pkcs11_module *pkcs11_module_get(struct pkcs11_module *pkcs)
 #define RTLD_DEEPBIND 0
 #endif
 
-struct pkcs11_module *pkcs11_module_new(const char *module,
-					const char *module_initargs,
-					struct dbg *dbg)
+int pkcs11_module_init(struct pkcs11_module *pkcs,
+		       const char *module, const char *module_initargs,
+		       struct dbg *dbg)
 {
 	CK_RV (*c_get_function_list)(CK_FUNCTION_LIST_PTR_PTR);
 	CK_C_INITIALIZE_ARGS args = {
@@ -708,14 +708,6 @@ struct pkcs11_module *pkcs11_module_new(const char *module,
 	};
 	CK_RV ck_rv;
 	char *err;
-	struct pkcs11_module *pkcs;
-
-	if (!module || !dbg)
-		return NULL;
-
-	pkcs = OPENSSL_zalloc(sizeof(struct pkcs11_module));
-	if (!pkcs)
-		return NULL;
 
 	pkcs->soname = OPENSSL_strdup(module);
 
@@ -755,12 +747,34 @@ struct pkcs11_module *pkcs11_module_new(const char *module,
 	pkcs->state = PKCS11_INITIALIZED;
 	module_info(pkcs, dbg);
 
-	return pkcs11_module_get(pkcs);
+	return OSSL_RV_OK;
 
 close_err:
 	dlclose(pkcs->dlhandle);
 err:
 	OPENSSL_free(pkcs->soname);
+	return OSSL_RV_ERR;
+}
+
+struct pkcs11_module *pkcs11_module_new(const char *module,
+					const char *module_initargs,
+					struct dbg *dbg)
+{
+	struct pkcs11_module *pkcs;
+
+	if (!module || !dbg)
+		return NULL;
+
+	pkcs = OPENSSL_zalloc(sizeof(struct pkcs11_module));
+	if (!pkcs)
+		return NULL;
+
+	if (pkcs11_module_init(pkcs, module, module_initargs, dbg) != OSSL_RV_OK)
+		goto err;
+
+	return pkcs11_module_get(pkcs);
+
+err:
 	OPENSSL_free(pkcs);
 	return NULL;
 }
