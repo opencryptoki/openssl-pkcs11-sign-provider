@@ -180,8 +180,7 @@ static void ps_prov_teardown(void *vpctx)
 	if (!pctx)
 		return;
 
-	pkcs11_module_free(pctx->pkcs11);
-	pctx->pkcs11 = NULL;
+	pkcs11_module_teardown(&pctx->pkcs11);
 
 	fwd_teardown(&pctx->fwd);
 	core_teardown(&pctx->core);
@@ -302,13 +301,12 @@ static int ps_prov_init(const OSSL_CORE_HANDLE *handle,
 	}
 	ps_pctx_debug(pctx, "pctx: %p, forward: %s", pctx, pctx->fwd.name);
 
-	pctx->pkcs11 = pkcs11_module_new(module, module_args, &pctx->dbg);
-	if (!pctx->pkcs11) {
+	if (pkcs11_module_init(&pctx->pkcs11, module, module_args, &pctx->dbg) != OSSL_RV_OK) {
 		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
 			       "Failed to initialize pkcs11 module %s", module);
 		goto err;
 	}
-	ps_pctx_debug(pctx, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11->soname);
+	ps_pctx_debug(pctx, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11.soname);
 
 	*vctx = pctx;
 	*out = ps_dispatch_table;
