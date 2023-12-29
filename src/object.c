@@ -91,9 +91,7 @@ CK_OBJECT_CLASS obj_get_class(const struct obj *obj)
 static void _obj_free(struct obj *obj)
 {
 	if (obj->pin)
-		OPENSSL_cleanse(obj->pin, strlen(obj->pin));
-
-	OPENSSL_free(obj->pin);
+		OPENSSL_clear_free(obj->pin, strlen(obj->pin));
 	pkcs11_attrs_deepfree(obj->attrs, obj->nattrs);
 	OPENSSL_free(obj->attrs);
 	OPENSSL_free(obj);
