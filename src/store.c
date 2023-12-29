@@ -22,7 +22,6 @@ static const int key_obj_type = OSSL_OBJECT_PKEY;
 struct store_ctx {
 	struct provider_ctx *pctx;
 	struct parsed_uri *puri;
-	struct pkcs11_module *pkcs11;
 	CK_SLOT_ID slot_id;
 	CK_SESSION_HANDLE session;
 	struct obj **objects;
@@ -135,12 +134,8 @@ static int handle_pkcs11_module(struct store_ctx *sctx)
 			    sctx, puri->mod_name);
 	}
 
-	if (!sctx->pkcs11) {
-		sctx->pkcs11 = pkcs11_module_get(sctx->pctx->pkcs11);
-	}
-
 	ps_dbg_info(dbg, "sctx: %p, use pkcs11-module %s",
-		    sctx, sctx->pkcs11->soname);
+		    sctx, sctx->pctx->pkcs11->soname);
 	return 0;
 }
 
@@ -256,7 +251,7 @@ static int load_object_handles(struct store_ctx *sctx,
 			goto err;
 		}
 
-		if (pkcs11_fetch_attributes(sctx->pkcs11, sctx->session,
+		if (pkcs11_fetch_attributes(sctx->pctx->pkcs11, sctx->session,
 					    handles[i], &objs[i]->attrs,
 					    &objs[i]->nattrs, dbg) != CKR_OK) {
 			ps_dbg_error(dbg, "sctx: %p, attribute lookup failed (handle: %lu)",
@@ -331,7 +326,7 @@ out:
 static int lookup_objects(struct store_ctx *sctx)
 {
 	struct dbg *dbg = &sctx->pctx->dbg;
-	struct pkcs11_module *pkcs11 = sctx->pkcs11;
+	struct pkcs11_module *pkcs11 = sctx->pctx->pkcs11;
 	struct parsed_uri *puri = sctx->puri;
 	CK_OBJECT_HANDLE_PTR handles = NULL;
 	int rv = OSSL_RV_ERR;
@@ -394,7 +389,6 @@ static void ps_store_ctx_free(struct store_ctx *sctx)
 	if (!sctx)
 		return;
 
-	pkcs11_module_free(sctx->pkcs11);
 	parsed_uri_free(sctx->puri);
 	for (i = 0; i < sctx->nobjects; i++) {
 		obj_free(sctx->objects[i]);
@@ -536,7 +530,7 @@ static int ps_store_close(void *vctx)
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
 		     sctx, sctx->pctx);
 
-	pkcs11_session_close(sctx->pkcs11, &sctx->session, dbg);
+	pkcs11_session_close(sctx->pctx->pkcs11, &sctx->session, dbg);
 	ps_store_ctx_free(sctx);
 
 	return OSSL_RV_OK;
