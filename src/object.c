@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <string.h>
 #include <openssl/crypto.h>
 
 #include "common.h"
@@ -90,7 +91,7 @@ CK_OBJECT_CLASS obj_get_class(const struct obj *obj)
 static void _obj_free(struct obj *obj)
 {
 	if (obj->pin)
-		OPENSSL_cleanse(obj->pin, sizeof(obj->pin));
+		OPENSSL_cleanse(obj->pin, strlen(obj->pin));
 
 	OPENSSL_free(obj->pin);
 	pkcs11_attrs_deepfree(obj->attrs, obj->nattrs);
