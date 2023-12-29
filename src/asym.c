@@ -529,7 +529,7 @@ static CK_RV asym_op_decrypt_tls(struct op_ctx *opctx,
 	}
 
 	good = 1;
-	good &= ct_equals(pkcs11_decrypt(opctx->pctx->pkcs11, opctx->hsession,
+	good &= ct_equals(pkcs11_decrypt(&opctx->pctx->pkcs11, opctx->hsession,
 					 in, inlen, tmp[1], &len,
 					 &opctx->pctx->dbg),
 			  CKR_OK);
@@ -635,7 +635,7 @@ static int ps_asym_op_decrypt(struct op_ctx *opctx,
 		return OSSL_RV_ERR;
 	}
 
-	if (pkcs11_decrypt_init(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_decrypt_init(&opctx->pctx->pkcs11, opctx->hsession,
 				&mech, opctx->hobject,
 				&opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_decrypt_init() failed");
@@ -649,7 +649,7 @@ static int ps_asym_op_decrypt(struct op_ctx *opctx,
 						      in, inlen, &tls_params),
 				  CKR_OK);
 	} else {
-		good &= ct_equals(pkcs11_decrypt(opctx->pctx->pkcs11,
+		good &= ct_equals(pkcs11_decrypt(&opctx->pctx->pkcs11,
 						 opctx->hsession, in, inlen,
 						 out, &len, &opctx->pctx->dbg),
 				  CKR_OK);

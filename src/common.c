@@ -52,7 +52,7 @@ int op_ctx_session_ensure(struct op_ctx *opctx)
 	}
 
 	if ((opctx->hsession == CK_INVALID_HANDLE) &&
-	    (pkcs11_session_open_login(opctx->pctx->pkcs11, opctx->key->slot_id,
+	    (pkcs11_session_open_login(&opctx->pctx->pkcs11, opctx->key->slot_id,
 				       &opctx->hsession, opctx->key->pin,
 				       &opctx->pctx->dbg) != CKR_OK)) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_session_open_login() failed");
@@ -76,7 +76,7 @@ int op_ctx_object_ensure(struct op_ctx *opctx)
 		return OSSL_RV_ERR;
 
 	if ((opctx->hobject == CK_INVALID_HANDLE) &&
-	    (pkcs11_object_handle(opctx->pctx->pkcs11,
+	    (pkcs11_object_handle(&opctx->pctx->pkcs11,
 				  opctx->hsession,
 				  opctx->key->attrs, opctx->key->nattrs,
 				  &opctx->hobject,
@@ -153,7 +153,7 @@ err:
 
 void op_ctx_teardown_pkcs11(struct op_ctx *opctx)
 {
-	pkcs11_session_close(opctx->pctx->pkcs11, &opctx->hsession,
+	pkcs11_session_close(&opctx->pctx->pkcs11, &opctx->hsession,
 			     &opctx->pctx->dbg);
 
 	opctx->hsession = CK_INVALID_HANDLE;

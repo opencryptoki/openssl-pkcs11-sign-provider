@@ -648,7 +648,7 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 	return CKR_OK;
 }
 
-static void module_teardown(struct pkcs11_module *pkcs)
+void pkcs11_module_teardown(struct pkcs11_module *pkcs)
 {
 	if (!pkcs)
 		return;
@@ -670,27 +670,6 @@ static void module_teardown(struct pkcs11_module *pkcs)
 	pkcs->soname = NULL;
 
 	pkcs->state = PKCS11_UNINITIALIZED;
-}
-
-void pkcs11_module_free(struct pkcs11_module *pkcs)
-{
-	if (!pkcs)
-		return;
-
-	if (__atomic_sub_fetch(&pkcs->refcnt, 1, __ATOMIC_SEQ_CST))
-		return;
-
-	module_teardown(pkcs);
-	OPENSSL_free(pkcs);
-}
-
-struct pkcs11_module *pkcs11_module_get(struct pkcs11_module *pkcs)
-{
-	if (!pkcs)
-		return NULL;
-
-	__atomic_fetch_add(&pkcs->refcnt, 1, __ATOMIC_SEQ_CST);
-	return pkcs;
 }
 
 #if !defined(RTLD_DEEPBIND)
@@ -754,27 +733,4 @@ close_err:
 err:
 	OPENSSL_free(pkcs->soname);
 	return OSSL_RV_ERR;
-}
-
-struct pkcs11_module *pkcs11_module_new(const char *module,
-					const char *module_initargs,
-					struct dbg *dbg)
-{
-	struct pkcs11_module *pkcs;
-
-	if (!module || !dbg)
-		return NULL;
-
-	pkcs = OPENSSL_zalloc(sizeof(struct pkcs11_module));
-	if (!pkcs)
-		return NULL;
-
-	if (pkcs11_module_init(pkcs, module, module_initargs, dbg) != OSSL_RV_OK)
-		goto err;
-
-	return pkcs11_module_get(pkcs);
-
-err:
-	OPENSSL_free(pkcs);
-	return NULL;
 }

@@ -37,7 +37,6 @@ struct pkcs11_module {
 		PKCS11_UNINITIALIZED = 0,
 		PKCS11_INITIALIZED,
 	} state;
-	unsigned int refcnt;
 	bool do_finalize;
 };
 
@@ -68,7 +67,7 @@ struct provider_ctx {
 	struct dbg dbg;
 	struct ossl_core core;
 	struct ossl_provider fwd;
-	struct pkcs11_module *pkcs11;
+	struct pkcs11_module pkcs11;
 };
 #define ps_pctx_debug(pctx, fmt...)	ps_dbg_debug(&(pctx->dbg), fmt)
 

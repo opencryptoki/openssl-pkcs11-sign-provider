@@ -22,14 +22,14 @@ static int op_ctx_signature_size(struct op_ctx *opctx, const CK_MECHANISM_PTR me
 	unsigned char *rawsig, dummy;
 	size_t rawsiglen, len;
 
-	if (pkcs11_sign_init(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_sign_init(&opctx->pctx->pkcs11, opctx->hsession,
 			     mech, opctx->hobject,
 			     &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
 		return OSSL_RV_ERR;
 	}
 
-	if (pkcs11_sign(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_sign(&opctx->pctx->pkcs11, opctx->hsession,
 			      &dummy, sizeof(dummy), NULL, &rawsiglen,
 			      &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
@@ -806,14 +806,14 @@ static int ps_signature_op_sign(void *vopctx,
 	if (!sig)
 		return op_ctx_signature_size(opctx, &mech, siglen);
 
-	if (pkcs11_sign_init(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_sign_init(&opctx->pctx->pkcs11, opctx->hsession,
 			     &mech, opctx->hobject,
 			     &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
 		return OSSL_RV_ERR;
 	}
 
-	if (pkcs11_sign(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_sign(&opctx->pctx->pkcs11, opctx->hsession,
 			tbs, tbslen, sig, &raw_siglen,
 			&opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
@@ -1241,7 +1241,7 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 	ps_dbg_debug_dump(&opctx->pctx->dbg,
 			  digest, dlen);
 
-	if (pkcs11_sign_init(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_sign_init(&opctx->pctx->pkcs11, opctx->hsession,
 			     &mech, opctx->hobject,
 			     &opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
@@ -1250,7 +1250,7 @@ static int ps_signature_op_digest_sign_final(void *vopctx,
 
 	tbslen += dlen;
 	raw_siglen = sigsize;
-	if (pkcs11_sign(opctx->pctx->pkcs11, opctx->hsession,
+	if (pkcs11_sign(&opctx->pctx->pkcs11, opctx->hsession,
 			tbs, tbslen, sig, &raw_siglen,
 			&opctx->pctx->dbg) != CKR_OK) {
 		ps_opctx_debug(opctx, "ERROR: pkcs11_sign() failed");
