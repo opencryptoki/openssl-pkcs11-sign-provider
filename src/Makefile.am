@@ -21,6 +21,7 @@ pkcs11sign_la_SOURCES = \
 	signature.c signature.h \
 	asym.c asym.h \
 	keyexch.c keyexch.h \
+	fork.c fork.h \
 	common.c common.h \
 	consttime.h
 
