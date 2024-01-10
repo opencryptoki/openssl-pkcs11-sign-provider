@@ -29,6 +29,7 @@
 #include "provider.h"
 #include "signature.h"
 #include "store.h"
+#include "fork.h"
 
 #define PS_PROV_DESCRIPTION	"PKCS11 signing key provider"
 #ifdef HAVE_CONFIG_H
@@ -179,6 +180,7 @@ static void ps_prov_teardown(void *vpctx)
 	if (!pctx)
 		return;
 
+	atforkpool_unregister_pkcs11(&pctx->pkcs11, &pctx->dbg);
 	pkcs11_module_teardown(&pctx->pkcs11);
 
 	fwd_teardown(&pctx->fwd);
@@ -306,6 +308,12 @@ static int ps_prov_init(const OSSL_CORE_HANDLE *handle,
 		goto err;
 	}
 	ps_pctx_debug(pctx, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11.soname);
+
+	if (atforkpool_register_pkcs11(&pctx->pkcs11, &pctx->dbg) != OSSL_RV_OK) {
+		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
+			       "Failed to register pkcs11 module %s", module);
+		goto err;
+	}
 
 	*vctx = pctx;
 	*out = ps_dispatch_table;
