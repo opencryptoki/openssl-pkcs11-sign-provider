@@ -9,6 +9,7 @@
 #include "common.h"
 #include "ossl.h"
 #include "object.h"
+#include "fork.h"
 
 static int op_ctx_init_key(struct op_ctx *octx, struct obj *key)
 {
@@ -123,7 +124,10 @@ struct op_ctx *op_ctx_new(struct provider_ctx *pctx, const char *prop, int type)
 		opctx->prop = OPENSSL_strdup(prop);
 
 	opctx->hsession = CK_INVALID_HANDLE;
+	atforkpool_register_sessionhandle(&opctx->hsession, &pctx->dbg);
+
 	opctx->hobject = CK_INVALID_HANDLE;
+	atforkpool_register_objecthandle(&opctx->hobject, &pctx->dbg);
 
 	return opctx;
 }
@@ -171,6 +175,9 @@ static void op_ctx_free_fwd(struct op_ctx *opctx)
 void op_ctx_free(struct op_ctx *octx)
 {
 	op_ctx_teardown_pkcs11(octx);
+
+	atforkpool_unregister_objecthandle(&octx->hobject, &octx->pctx->dbg);
+	atforkpool_unregister_sessionhandle(&octx->hsession, &octx->pctx->dbg);
 
 	op_ctx_free_fwd(octx);
 	EVP_MD_free(octx->md);
