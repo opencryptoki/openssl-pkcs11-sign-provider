@@ -32,6 +32,7 @@ typedef void (*func_t)(void);
 struct pkcs11_module {
 	char *soname;
 	void *dlhandle;
+	char *initargs;
 	CK_FUNCTION_LIST *fns;
 	enum PKCS11_STATE {
 		PKCS11_UNINITIALIZED = 0,
