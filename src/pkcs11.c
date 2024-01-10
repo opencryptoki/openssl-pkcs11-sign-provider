@@ -717,6 +717,9 @@ void pkcs11_module_teardown(struct pkcs11_module *pkcs)
 	OPENSSL_free(pkcs->soname);
 	pkcs->soname = NULL;
 
+	OPENSSL_free(pkcs->initargs);
+	pkcs->initargs = NULL;
+
 	pkcs->state = PKCS11_UNINITIALIZED;
 }
 
@@ -737,6 +740,8 @@ int pkcs11_module_init(struct pkcs11_module *pkcs,
 	char *err;
 
 	pkcs->soname = OPENSSL_strdup(module);
+	if (module_initargs)
+		pkcs->initargs = OPENSSL_strdup(module_initargs);
 
 	dlerror();
 	pkcs->dlhandle = dlopen(module,
