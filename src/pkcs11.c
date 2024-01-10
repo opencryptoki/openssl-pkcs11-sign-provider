@@ -101,10 +101,13 @@ static struct {
 #endif
 };
 
-static void module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
+static void _module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
 {
 	CK_INFO ck_info = { 0 };
 	CK_RV ck_rv;
+
+	if (dbg->level < DBG_INFO)
+		return;
 
 	ck_rv = pkcs->fns->C_GetInfo(&ck_info);
 	if (ck_rv != CKR_OK) {
@@ -129,6 +132,53 @@ static void module_info(struct pkcs11_module *pkcs, struct dbg *dbg)
 		    pkcs->soname,
 		    (int)ck_info.libraryVersion.major,
 		    (int)ck_info.libraryVersion.minor);
+}
+
+static CK_RV module_ensure(struct pkcs11_module *pkcs, struct dbg *dbg)
+{
+	CK_C_INITIALIZE_ARGS args = {
+		.flags = CKF_OS_LOCKING_OK,
+	};
+	CK_RV ck_rv;
+	int rv;
+
+	if (!pkcs || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	/* check state unlocked */
+	if (pkcs->state == PKCS11_INITIALIZED)
+		return CKR_OK;
+
+	rv = pthread_mutex_lock(&pkcs->mutex);
+	if (rv) {
+		ps_dbg_error(dbg, "pkcs: %p, unable to lock module: %d", pkcs, rv);
+		return CKR_CANT_LOCK;
+	}
+
+	/* check state again under lock */
+	if (pkcs->state == PKCS11_INITIALIZED) {
+		ck_rv = CKR_OK;
+		goto out;
+	}
+
+	args.pReserved = (void *)pkcs->initargs;
+	ck_rv = pkcs->fns->C_Initialize(&args);
+	if (ck_rv != CKR_OK &&
+	    ck_rv != CKR_CRYPTOKI_ALREADY_INITIALIZED) {
+		ps_dbg_error(dbg, "pkcs: %p, C_Init() failed with %d", pkcs, ck_rv);
+		goto out;
+	}
+
+	pkcs->do_finalize = (ck_rv == CKR_OK);
+	pkcs->state = PKCS11_INITIALIZED;
+	ck_rv = CKR_OK;
+	_module_info(pkcs, dbg);
+out:
+	rv = pthread_mutex_unlock(&pkcs->mutex);
+	if (rv)
+		ps_dbg_error(dbg, "pkcs: %p, unable to unlock module: %d", pkcs, rv);
+
+	return ck_rv;
 }
 
 static inline void attr_string(CK_ATTRIBUTE_PTR attr, CK_ATTRIBUTE_TYPE type,
@@ -311,6 +361,10 @@ CK_RV pkcs11_sign_init(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
+
 	ck_rv = pkcs11->fns->C_SignInit(hsession, mech, hkey);
 	switch (ck_rv) {
 	case CKR_OK:
@@ -336,6 +390,10 @@ CK_RV pkcs11_sign(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
+
 	ck_rv = pkcs11->fns->C_Sign(hsession, (CK_BYTE_PTR)data, datalen,
 				    sig, siglen);
 	if (ck_rv != CKR_OK) {
@@ -355,6 +413,10 @@ CK_RV pkcs11_decrypt_init(struct pkcs11_module *pkcs11,
 
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
 
 	ck_rv = pkcs11->fns->C_DecryptInit(hsession, mech, hkey);
 	switch (ck_rv) {
@@ -376,8 +438,14 @@ CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 		     unsigned char *data, size_t *datalen,
 		     struct dbg *dbg)
 {
+	CK_RV ck_rv;
+
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
 
 	return pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
 				      data, datalen);
@@ -406,6 +474,10 @@ CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !dbg || !attributes ||
 	    (session == CK_INVALID_HANDLE))
 		return CKR_ARGUMENTS_BAD;
+
+	rv = module_ensure(pkcs11, dbg);
+	if (rv != CKR_OK)
+		return rv;
 
 	rv = pkcs11->fns->C_GetAttributeValue(session, ohandle,
 					      template, nattrs);
@@ -461,6 +533,10 @@ CK_RV pkcs11_object_handle(struct pkcs11_module *pkcs11,
 	    (hsession == CK_INVALID_HANDLE))
 		return CKR_ARGUMENTS_BAD;
 
+	rv = module_ensure(pkcs11, dbg);
+	if (rv != CKR_OK)
+		return rv;
+
 	rv = pkcs11->fns->C_FindObjectsInit(hsession, attrs, nattrs);
 	if (rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: unable to initialize search: %d",
@@ -501,6 +577,10 @@ CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 	if (!pkcs11 || !objects || !nobjects || !dbg ||
 	    (session == CK_INVALID_HANDLE))
 		return CKR_ARGUMENTS_BAD;
+
+	rv = module_ensure(pkcs11, dbg);
+	if (rv != CKR_OK)
+		return rv;
 
 	memset(template, 0, sizeof(template));
 	tidx = 0;
@@ -566,6 +646,9 @@ void pkcs11_session_close(struct pkcs11_module *pkcs11,
 	if (!session || (*session == CK_INVALID_HANDLE))
 		return;
 
+	if (module_ensure(pkcs11, dbg) != CKR_OK)
+		return;
+
 	ck_rv = pkcs11->fns->C_CloseSession(*session);
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_CloseSession() failed: %lu",
@@ -585,6 +668,10 @@ CK_RV pkcs11_session_open_login(struct pkcs11_module *pkcs11,
 	    (slot_id == CK_UNAVAILABLE_INFORMATION) ||
 	    (*session != CK_INVALID_HANDLE))
 		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
 
 	ck_rv = pkcs11->fns->C_OpenSession(slot_id, CKF_SERIAL_SESSION,
 					   NULL, NULL, session);
@@ -617,6 +704,10 @@ CK_RV pkcs11_get_token_info(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
+
 	ck_rv = pkcs11->fns->C_GetTokenInfo(slot_id, pti);
 	if (ck_rv != CKR_OK)
 		ps_dbg_error(dbg, "%s: C_GetTokenInfo() failed: %d",
@@ -633,6 +724,10 @@ CK_RV pkcs11_get_slot_info(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
 
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
+
 	ck_rv = pkcs11->fns->C_GetSlotInfo(slot_id, psi);
 	if (ck_rv != CKR_OK)
 		ps_dbg_error(dbg, "%s: C_GetSlotInfo() failed: %d",
@@ -648,6 +743,10 @@ CK_RV pkcs11_get_info(struct pkcs11_module *pkcs11, CK_INFO_PTR pi,
 
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
 
 	ck_rv = pkcs11->fns->C_GetInfo(pi);
 	if (ck_rv != CKR_OK)
@@ -667,6 +766,10 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 
 	if (!pkcs11 | !slots | !nslots | !dbg)
 		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = module_ensure(pkcs11, dbg);
+	if (ck_rv != CKR_OK)
+		return ck_rv;
 
 	ck_rv = pkcs11->fns->C_GetSlotList(CK_TRUE, NULL_PTR, &nsl);
 	if (ck_rv != CKR_OK) {
@@ -701,10 +804,8 @@ void pkcs11_module_teardown(struct pkcs11_module *pkcs)
 	if (!pkcs)
 		return;
 
-	if (pkcs->state != PKCS11_INITIALIZED)
-		return;
-
-	if (pkcs->do_finalize && pkcs->fns) {
+	if (pkcs->state == PKCS11_INITIALIZED &&
+	    pkcs->do_finalize && pkcs->fns) {
 		pkcs->fns->C_Finalize(NULL);
 		pkcs->fns = NULL;
 	}
@@ -727,17 +828,22 @@ void pkcs11_module_teardown(struct pkcs11_module *pkcs)
 #define RTLD_DEEPBIND 0
 #endif
 
-int pkcs11_module_init(struct pkcs11_module *pkcs,
+int pkcs11_module_load(struct pkcs11_module *pkcs,
 		       const char *module, const char *module_initargs,
 		       struct dbg *dbg)
 {
 	CK_RV (*c_get_function_list)(CK_FUNCTION_LIST_PTR_PTR);
-	CK_C_INITIALIZE_ARGS args = {
-		.flags = CKF_OS_LOCKING_OK,
-		.pReserved = (void *)module_initargs,
-	};
 	CK_RV ck_rv;
 	char *err;
+	int rc;
+
+	pkcs->state = PKCS11_UNINITIALIZED;
+	rc = pthread_mutex_init(&pkcs->mutex, NULL);
+	if (rc) {
+		ps_dbg_error(dbg, "pkcs: %p, pthread_mutex_init() failed: %d",
+			     pkcs, rc);
+		return OSSL_RV_ERR;
+	}
 
 	pkcs->soname = OPENSSL_strdup(module);
 	if (module_initargs)
@@ -767,17 +873,6 @@ int pkcs11_module_init(struct pkcs11_module *pkcs,
 			     pkcs->soname, ck_rv);
 		goto close_err;
 	}
-
-	ck_rv = pkcs->fns->C_Initialize(&args);
-	if (ck_rv != CKR_OK && ck_rv != CKR_CRYPTOKI_ALREADY_INITIALIZED) {
-		ps_dbg_error(dbg, "%s: C_Initialize(%s) failed: %d",
-			     pkcs->soname, module_initargs, ck_rv);
-		goto close_err;
-	}
-	pkcs->do_finalize = (ck_rv == CKR_OK);
-
-	pkcs->state = PKCS11_INITIALIZED;
-	module_info(pkcs, dbg);
 
 	return OSSL_RV_OK;
 

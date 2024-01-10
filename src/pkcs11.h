@@ -71,7 +71,7 @@ CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs,
 		       struct dbg *dbg);
 
 void pkcs11_module_teardown(struct pkcs11_module *pkcs);
-int pkcs11_module_init(struct pkcs11_module *pkcs,
+int pkcs11_module_load(struct pkcs11_module *pkcs,
 		       const char *module, const char *module_initargs,
 		       struct dbg *dbg);
 

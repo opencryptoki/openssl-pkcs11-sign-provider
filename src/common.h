@@ -38,6 +38,7 @@ struct pkcs11_module {
 		PKCS11_UNINITIALIZED = 0,
 		PKCS11_INITIALIZED,
 	} state;
+	pthread_mutex_t mutex;
 	bool do_finalize;
 };
 

@@ -300,9 +300,9 @@ static int ps_prov_init(const OSSL_CORE_HANDLE *handle,
 	}
 	ps_pctx_debug(pctx, "pctx: %p, forward: %s", pctx, pctx->fwd.name);
 
-	if (pkcs11_module_init(&pctx->pkcs11, module, module_args, &pctx->dbg) != OSSL_RV_OK) {
+	if (pkcs11_module_load(&pctx->pkcs11, module, module_args, &pctx->dbg) != OSSL_RV_OK) {
 		put_error_pctx(pctx, PS_ERR_INTERNAL_ERROR,
-			       "Failed to initialize pkcs11 module %s", module);
+			       "Failed to load pkcs11 module %s", module);
 		goto err;
 	}
 	ps_pctx_debug(pctx, "pctx: %p, pkcs11: %s", pctx, pctx->pkcs11.soname);
