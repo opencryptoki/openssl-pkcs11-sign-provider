@@ -5,7 +5,6 @@
  *          Ingo Franzki <ifranzki@linux.ibm.com>
  */
 
-#include <openssl/bn.h>
 #include <openssl/core.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
