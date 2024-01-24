@@ -5,6 +5,7 @@
 
 #include <stdarg.h>
 #include <string.h>
+#include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
 #include <openssl/evp.h>
