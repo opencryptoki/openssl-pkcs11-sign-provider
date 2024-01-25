@@ -23,6 +23,7 @@ struct store_ctx {
 	struct provider_ctx *pctx;
 	struct parsed_uri *puri;
 	CK_SLOT_ID slot_id;
+	bool objects_loaded;
 	struct obj **objects;
 	CK_ULONG nobjects;
 	CK_ULONG load_idx;
@@ -331,22 +332,6 @@ static int lookup_objects(struct store_ctx *sctx)
 	int rv = OSSL_RV_ERR;
 	CK_ULONG nhandles;
 
-	if (!match_library_uri(pkcs11, puri, dbg)) {
-		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
-			     sctx);
-		return OSSL_RV_ERR;
-	}
-
-	sctx->slot_id = lookup_slot_id(pkcs11, puri, dbg);
-	if (sctx->slot_id == CK_UNAVAILABLE_INFORMATION) {
-		ps_dbg_debug(dbg, "sctx: %p, no matching slot/token found",
-			     sctx);
-		return OSSL_RV_ERR;
-	}
-
-	ps_dbg_debug(dbg, "sctx: %p, token in slot %lu selected",
-		     sctx, sctx->slot_id);
-
 	if (pkcs11_session_open_login(pkcs11, sctx->slot_id, &sh,
 				      puri->pin, dbg) != CKR_OK)
 		return OSSL_RV_ERR;
@@ -369,11 +354,49 @@ static int lookup_objects(struct store_ctx *sctx)
 		goto err;
 	}
 
+	sctx->objects_loaded = true;
 	rv = OSSL_RV_OK;
 err:
 	pkcs11_session_close(&sctx->pctx->pkcs11, &sh, dbg);
 	OPENSSL_free(handles);
 	return rv;
+}
+
+static int store_ctx_open(struct store_ctx *sctx, const char *uri)
+{
+	struct pkcs11_module *pkcs11 = &sctx->pctx->pkcs11;
+	struct dbg *dbg = &sctx->pctx->dbg;
+
+	sctx->puri = parsed_uri_new(uri);
+	if (!sctx->puri) {
+		ps_dbg_error(dbg, "sctx: %p, parsed_uri_new() failed. uri: %s",
+			     sctx, uri);
+		return OSSL_RV_ERR;
+	}
+
+	if (handle_pkcs11_module(sctx)) {
+		ps_dbg_error(dbg, "sctx: %p, pkcs11 module handling failed. uri: %s",
+			     sctx, uri);
+		return OSSL_RV_ERR;
+	}
+
+	if (!match_library_uri(pkcs11, sctx->puri, dbg)) {
+		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
+			     sctx);
+		return OSSL_RV_ERR;
+	}
+
+	sctx->slot_id = lookup_slot_id(pkcs11, sctx->puri, dbg);
+	if (sctx->slot_id == CK_UNAVAILABLE_INFORMATION) {
+		ps_dbg_debug(dbg, "sctx: %p, no matching slot/token found",
+			     sctx);
+		return OSSL_RV_ERR;
+	}
+
+	ps_dbg_debug(dbg, "sctx: %p, token in slot %lu selected",
+		     sctx, sctx->slot_id);
+
+	return OSSL_RV_OK;
 }
 
 static void store_ctx_free(struct store_ctx *sctx)
@@ -391,34 +414,17 @@ static void store_ctx_free(struct store_ctx *sctx)
 	OPENSSL_free(sctx);
 }
 
-static struct store_ctx *store_ctx_init(struct provider_ctx *pctx,
-					   const char *uri)
+static struct store_ctx *store_ctx_init(struct provider_ctx *pctx)
 {
-	struct dbg *dbg = &pctx->dbg;
 	struct store_ctx *sctx;
 
 	sctx = OPENSSL_zalloc(sizeof(struct store_ctx));
 	if (!sctx)
 		return NULL;
 
-	sctx->puri = parsed_uri_new(uri);
-	if (!sctx->puri) {
-		ps_dbg_error(dbg, "pctx: %p, parsed_uri_new() failed. uri: %s",
-			     pctx, uri);
-		store_ctx_free(sctx);
-		return NULL;
-	}
-
 	sctx->pctx = pctx;
-
-	if (handle_pkcs11_module(sctx)) {
-		ps_dbg_error(dbg, "pctx: %p, pkcs11 module handling failed. uri: %s",
-			     pctx, uri);
-		store_ctx_free(sctx);
-		return NULL;
-	}
-
 	sctx->slot_id = CK_UNAVAILABLE_INFORMATION;
+	sctx->objects_loaded = false;
 
 	return sctx;
 }
@@ -445,11 +451,11 @@ static void *ps_store_open(void *vpctx, const char *uri)
 	ps_dbg_debug(dbg, "entry: pctx: %pi, uri: %s",
 		     pctx, uri);
 
-	sctx = store_ctx_init(pctx, uri);
+	sctx = store_ctx_init(pctx);
 	if (!sctx)
 		return NULL;
 
-	if (lookup_objects(sctx) != OSSL_RV_OK) {
+	if (store_ctx_open(sctx, uri) != OSSL_RV_OK) {
 		store_ctx_free(sctx);
 		return NULL;
 	}
@@ -478,6 +484,10 @@ static int ps_store_load(void *vctx,
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
 		     sctx, sctx->pctx);
 
+	if (!sctx->objects_loaded &&
+	    (lookup_objects(sctx) != OSSL_RV_OK))
+		return OSSL_RV_ERR;
+
 	obj = get_next_loadable_object(sctx);
 	if (!obj)
 		return OSSL_RV_ERR;
@@ -498,13 +508,14 @@ static int ps_store_eof(void *vctx)
 	int rv;
 
 	if (!sctx)
-		return 1;
+		return OSSL_RV_TRUE;
 	dbg = &sctx->pctx->dbg;
 
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
 		     sctx, sctx->pctx);
 
-	rv = (sctx->load_idx >= sctx->nobjects);
+	rv = (!sctx->objects_loaded || (sctx->load_idx < sctx->nobjects)) ?
+		OSSL_RV_FALSE : OSSL_RV_TRUE;
 
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, exit: %d",
 		     sctx, sctx->pctx, rv);
