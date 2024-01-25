@@ -381,7 +381,7 @@ err:
 	return rv;
 }
 
-static void ps_store_ctx_free(struct store_ctx *sctx)
+static void store_ctx_free(struct store_ctx *sctx)
 {
 	CK_ULONG i;
 
@@ -410,7 +410,7 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *pctx,
 	if (!sctx->puri) {
 		ps_dbg_error(dbg, "pctx: %p, parsed_uri_new() failed. uri: %s",
 			     pctx, uri);
-		ps_store_ctx_free(sctx);
+		store_ctx_free(sctx);
 		return NULL;
 	}
 
@@ -419,7 +419,7 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *pctx,
 	if (handle_pkcs11_module(sctx)) {
 		ps_dbg_error(dbg, "pctx: %p, pkcs11 module handling failed. uri: %s",
 			     pctx, uri);
-		ps_store_ctx_free(sctx);
+		store_ctx_free(sctx);
 		return NULL;
 	}
 
@@ -455,7 +455,7 @@ static void *ps_store_open(void *vpctx, const char *uri)
 		return NULL;
 
 	if (lookup_objects(sctx) != OSSL_RV_OK) {
-		ps_store_ctx_free(sctx);
+		store_ctx_free(sctx);
 		return NULL;
 	}
 
@@ -530,7 +530,7 @@ static int ps_store_close(void *vctx)
 		     sctx, sctx->pctx);
 
 	pkcs11_session_close(&sctx->pctx->pkcs11, &sctx->session, dbg);
-	ps_store_ctx_free(sctx);
+	store_ctx_free(sctx);
 
 	return OSSL_RV_OK;
 }
