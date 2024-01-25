@@ -23,7 +23,6 @@ struct store_ctx {
 	struct provider_ctx *pctx;
 	struct parsed_uri *puri;
 	CK_SLOT_ID slot_id;
-	CK_SESSION_HANDLE session;
 	struct obj **objects;
 	CK_ULONG nobjects;
 	CK_ULONG load_idx;
@@ -231,7 +230,7 @@ static bool match_library_uri(struct pkcs11_module *pkcs11, struct parsed_uri *p
 	return true;
 }
 
-static int load_object_handles(struct store_ctx *sctx,
+static int load_object_handles(struct store_ctx *sctx, CK_SESSION_HANDLE sh,
 			       CK_OBJECT_HANDLE_PTR handles, CK_ULONG nhandles)
 {
 	struct provider_ctx *pctx = sctx->pctx;
@@ -250,7 +249,7 @@ static int load_object_handles(struct store_ctx *sctx,
 			goto err;
 		}
 
-		if (pkcs11_fetch_attributes(&sctx->pctx->pkcs11, sctx->session,
+		if (pkcs11_fetch_attributes(&sctx->pctx->pkcs11, sh,
 					    handles[i], &objs[i]->attrs,
 					    &objs[i]->nattrs, dbg) != CKR_OK) {
 			ps_dbg_error(dbg, "sctx: %p, attribute lookup failed (handle: %lu)",
@@ -324,13 +323,13 @@ out:
 
 static int lookup_objects(struct store_ctx *sctx)
 {
-	struct dbg *dbg = &sctx->pctx->dbg;
 	struct pkcs11_module *pkcs11 = &sctx->pctx->pkcs11;
+	CK_SESSION_HANDLE sh = CK_INVALID_HANDLE;
 	struct parsed_uri *puri = sctx->puri;
 	CK_OBJECT_HANDLE_PTR handles = NULL;
+	struct dbg *dbg = &sctx->pctx->dbg;
 	int rv = OSSL_RV_ERR;
 	CK_ULONG nhandles;
-	CK_RV ck_rv;
 
 	if (!match_library_uri(pkcs11, puri, dbg)) {
 		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
@@ -348,19 +347,14 @@ static int lookup_objects(struct store_ctx *sctx)
 	ps_dbg_debug(dbg, "sctx: %p, token in slot %lu selected",
 		     sctx, sctx->slot_id);
 
-	ck_rv = pkcs11_session_open_login(pkcs11, sctx->slot_id, &sctx->session,
-				       puri->pin, dbg);
-	if (ck_rv != CKR_OK) {
+	if (pkcs11_session_open_login(pkcs11, sctx->slot_id, &sh,
+				      puri->pin, dbg) != CKR_OK)
 		return OSSL_RV_ERR;
-	}
 
-	ck_rv = pkcs11_find_objects(pkcs11, sctx->session,
-				    puri->obj_object, puri->obj_id, puri->obj_type,
-				    &handles, &nhandles,
-				    dbg);
-	if (ck_rv != CKR_OK) {
-		return OSSL_RV_ERR;
-	}
+	if (pkcs11_find_objects(pkcs11, sh,
+				puri->obj_object, puri->obj_id, puri->obj_type,
+				&handles, &nhandles, dbg) != CKR_OK)
+		goto err;
 
 	if (nhandles== 0) {
 		ps_dbg_error(dbg, "sctx: %p, no objects found in slot %d",
@@ -369,7 +363,7 @@ static int lookup_objects(struct store_ctx *sctx)
 	}
 
 	sctx->load_idx = 0;
-	if (load_object_handles(sctx, handles, nhandles) != OSSL_RV_OK) {
+	if (load_object_handles(sctx, sh, handles, nhandles) != OSSL_RV_OK) {
 		ps_dbg_error(dbg, "sctx: %p, slot %d failed to load object handles",
 			     sctx, sctx->slot_id);
 		goto err;
@@ -377,6 +371,7 @@ static int lookup_objects(struct store_ctx *sctx)
 
 	rv = OSSL_RV_OK;
 err:
+	pkcs11_session_close(&sctx->pctx->pkcs11, &sh, dbg);
 	OPENSSL_free(handles);
 	return rv;
 }
@@ -529,7 +524,6 @@ static int ps_store_close(void *vctx)
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
 		     sctx, sctx->pctx);
 
-	pkcs11_session_close(&sctx->pctx->pkcs11, &sctx->session, dbg);
 	store_ctx_free(sctx);
 
 	return OSSL_RV_OK;
