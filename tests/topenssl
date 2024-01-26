@@ -32,6 +32,26 @@ dgst -verify "${FILE_PEM_ECDSA_PUB}"
 || exit 99
 
 echo "##################################################"
+echo "## EC: sign/verify (pkcs11/file)"
+echo "##"
+
+cat "${PIN_SOURCE}" |
+ossl '
+dgst -sign "${URI_KEY_ECDSA_PRV_NOPIN}"
+     -passin stdin
+     -sha256
+     -out "${TMPPDIR}/random-1k.bin.ec-sig_askpin"
+     "${TMPPDIR}/random-1k.bin"' \
+|| exit 99
+
+ossl '
+dgst -verify "${FILE_PEM_ECDSA_PUB}"
+     -sha256
+     -signature "${TMPPDIR}/random-1k.bin.ec-sig_askpin"
+     "${TMPPDIR}/random-1k.bin"' \
+|| exit 99
+
+echo "##################################################"
 echo "## EC: tls-server/client (ECDHE-ECDSA-AES256-GCM-SHA384)"
 echo "##"
 
