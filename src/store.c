@@ -478,6 +478,9 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *pctx)
 
 #define DISP_STORE_FN(tname, name) DECL_DISPATCH_FUNC(store, tname, name)
 DISP_STORE_FN(open, ps_store_open);
+#ifdef OSSL_FUNC_STORE_OPEN_EX
+DISP_STORE_FN(open_ex, ps_store_open_ex);
+#endif
 DISP_STORE_FN(load, ps_store_load);
 DISP_STORE_FN(eof, ps_store_eof);
 DISP_STORE_FN(close, ps_store_close);
@@ -512,6 +515,40 @@ static void *ps_store_open(void *vpctx, const char *uri)
 
 	return sctx;
 }
+
+#ifdef OSSL_FUNC_STORE_OPEN_EX
+static void *ps_store_open_ex(void *vpctx, const char *uri,
+			      const OSSL_PARAM params[],
+			      OSSL_PASSPHRASE_CALLBACK *pw_cb __unused,
+			      void *pw_cbarg __unused)
+{
+	struct provider_ctx *pctx = (struct provider_ctx *)vpctx;
+	struct store_ctx *sctx;
+	struct dbg *dbg;
+
+	if (!pctx || !uri)
+		return NULL;
+	dbg = &pctx->dbg;
+
+	ps_dbg_debug(dbg, "entry: pctx: %pi, uri: %s",
+		     pctx, uri);
+
+	sctx = ps_store_open(pctx, uri);
+	if (!sctx)
+		return NULL;
+
+	if ((ps_store_set_ctx_params(sctx, params) != OSSL_RV_OK) ||
+	    (lookup_objects(sctx, pw_cb, pw_cbarg) != OSSL_RV_OK)) {
+		store_ctx_free(sctx);
+		return NULL;
+	}
+
+	ps_dbg_debug(dbg, "exit: sctx: %p, pctx: %p",
+		     sctx, pctx);
+
+	return sctx;
+}
+#endif
 
 static int ps_store_load(void *vctx,
 			 OSSL_CALLBACK *object_cb,
@@ -655,6 +692,9 @@ static int ps_store_set_ctx_params(void *vctx,
 	{ OSSL_FUNC_STORE_##NAME, (void (*)(void))name }
 static const OSSL_DISPATCH ps_store_funcs[] = {
 	DISP_STORE_ELEM(OPEN, ps_store_open),
+#ifdef OSSL_FUNC_STORE_OPEN_EX
+	DISP_STORE_ELEM(OPEN, ps_store_open_ex),
+#endif
 	DISP_STORE_ELEM(LOAD, ps_store_load),
 	DISP_STORE_ELEM(EOF, ps_store_eof),
 	DISP_STORE_ELEM(CLOSE, ps_store_close),
