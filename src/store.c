@@ -23,12 +23,36 @@ struct store_ctx {
 	struct provider_ctx *pctx;
 	struct parsed_uri *puri;
 	CK_SLOT_ID slot_id;
+	char *slot_login_info;
 	bool objects_loaded;
 	struct obj **objects;
 	CK_ULONG nobjects;
 	CK_ULONG load_idx;
 	int expect;
 };
+
+#define MAX_PIN		64
+static char *pin_from_cb(OSSL_PASSPHRASE_CALLBACK *pw_cb, void *pw_cbarg,
+			 const char *msg)
+{
+	OSSL_PARAM params[2] = {
+		OSSL_PARAM_DEFN(OSSL_PASSPHRASE_PARAM_INFO,
+				OSSL_PARAM_UTF8_STRING, (void *)msg,
+				strlen(msg)),
+		OSSL_PARAM_END,
+	};
+	char cbpin[MAX_PIN + 1] = { 0 };
+	size_t cbpin_len;
+	char *rv = NULL;
+
+	if (pw_cb(cbpin, MAX_PIN, &cbpin_len, params, pw_cbarg) != OSSL_RV_OK)
+		goto out;
+
+	rv = OPENSSL_strndup(cbpin, cbpin_len);
+out:
+	OPENSSL_cleanse(cbpin, sizeof(cbpin));
+	return rv;
+}
 
 static int key2params(struct obj *obj, OSSL_PARAM *params, unsigned int nparams)
 {
@@ -231,6 +255,21 @@ static bool match_library_uri(struct pkcs11_module *pkcs11, struct parsed_uri *p
 	return true;
 }
 
+#define LOGIN_INFO_FMT	"PKCS#11 token \'%s\' in slot %lu (user pin)"
+static void prepare_login_info(struct store_ctx *sctx, struct dbg *dbg)
+{
+	char *tlabel = NULL;
+	CK_TOKEN_INFO ti;
+
+	if (pkcs11_get_token_info(&sctx->pctx->pkcs11, sctx->slot_id,
+				  &ti, dbg) == CKR_OK)
+		tlabel = OPENSSL_strndup((char *)ti.label, pkcs11_strlen(ti.label, sizeof(ti.label)));
+
+	asprintf(&sctx->slot_login_info, LOGIN_INFO_FMT,
+		 tlabel ?: "", sctx->slot_id);
+	OPENSSL_free(tlabel);
+}
+
 static int load_object_handles(struct store_ctx *sctx, CK_SESSION_HANDLE sh,
 			       CK_OBJECT_HANDLE_PTR handles, CK_ULONG nhandles)
 {
@@ -322,7 +361,9 @@ out:
 	return rv;
 }
 
-static int lookup_objects(struct store_ctx *sctx)
+static int lookup_objects(struct store_ctx *sctx,
+			  OSSL_PASSPHRASE_CALLBACK *pw_cb,
+			  void *pw_cbarg)
 {
 	struct pkcs11_module *pkcs11 = &sctx->pctx->pkcs11;
 	CK_SESSION_HANDLE sh = CK_INVALID_HANDLE;
@@ -331,6 +372,9 @@ static int lookup_objects(struct store_ctx *sctx)
 	struct dbg *dbg = &sctx->pctx->dbg;
 	int rv = OSSL_RV_ERR;
 	CK_ULONG nhandles;
+
+	if (!puri->pin)
+		puri->pin = pin_from_cb(pw_cb, pw_cbarg, sctx->slot_login_info);
 
 	if (pkcs11_session_open_login(pkcs11, sctx->slot_id, &sh,
 				      puri->pin, dbg) != CKR_OK)
@@ -393,6 +437,8 @@ static int store_ctx_open(struct store_ctx *sctx, const char *uri)
 		return OSSL_RV_ERR;
 	}
 
+	prepare_login_info(sctx, dbg);
+
 	ps_dbg_debug(dbg, "sctx: %p, token in slot %lu selected",
 		     sctx, sctx->slot_id);
 
@@ -410,6 +456,7 @@ static void store_ctx_free(struct store_ctx *sctx)
 	for (i = 0; i < sctx->nobjects; i++) {
 		obj_free(sctx->objects[i]);
 	}
+	free(sctx->slot_login_info);
 	OPENSSL_free(sctx->objects);
 	OPENSSL_free(sctx);
 }
@@ -469,8 +516,8 @@ static void *ps_store_open(void *vpctx, const char *uri)
 static int ps_store_load(void *vctx,
 			 OSSL_CALLBACK *object_cb,
 			 void *object_cbarg,
-			 OSSL_PASSPHRASE_CALLBACK *pw_cb __unused,
-			 void *pw_cbarg __unused)
+			 OSSL_PASSPHRASE_CALLBACK *pw_cb,
+			 void *pw_cbarg)
 {
 	struct store_ctx *sctx = (struct store_ctx *)vctx;
 	struct dbg *dbg;
@@ -485,7 +532,7 @@ static int ps_store_load(void *vctx,
 		     sctx, sctx->pctx);
 
 	if (!sctx->objects_loaded &&
-	    (lookup_objects(sctx) != OSSL_RV_OK))
+	    (lookup_objects(sctx, pw_cb, pw_cbarg) != OSSL_RV_OK))
 		return OSSL_RV_ERR;
 
 	obj = get_next_loadable_object(sctx);
