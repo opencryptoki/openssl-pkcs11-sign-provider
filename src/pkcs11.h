@@ -60,6 +60,12 @@ CK_RV pkcs11_session_open_login(struct pkcs11_module *pkcs11,
 				CK_SLOT_ID slot_id,
 				CK_SESSION_HANDLE_PTR session, const char *pin,
 				struct dbg *dbg);
+CK_RV pkcs11_get_token_info(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
+			    CK_TOKEN_INFO_PTR pti, struct dbg *dbg);
+CK_RV pkcs11_get_slot_info(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
+			   CK_SLOT_INFO_PTR psi, struct dbg *dbg);
+CK_RV pkcs11_get_info(struct pkcs11_module *pkcs11, CK_INFO_PTR pi,
+		      struct dbg *dbg);
 CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs,
 		       CK_SLOT_ID_PTR *slots, CK_ULONG *nslots,
 		       struct dbg *dbg);

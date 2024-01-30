@@ -140,7 +140,7 @@ static int handle_pkcs11_module(struct store_ctx *sctx)
 }
 
 static bool match_token_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
-			    struct parsed_uri *puri)
+			    struct parsed_uri *puri, struct dbg *dbg)
 {
 	CK_TOKEN_INFO ti;
 
@@ -148,7 +148,7 @@ static bool match_token_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 	   !puri->tok_serial && !puri->tok_model)
 		return true;
 
-	if (pkcs11->fns->C_GetTokenInfo(slot_id, &ti) != CKR_OK)
+	if (pkcs11_get_token_info(pkcs11, slot_id, &ti, dbg) != CKR_OK)
 		return false;
 
 	if (puri->tok_token &&
@@ -175,7 +175,7 @@ static bool match_token_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 }
 
 static bool match_slot_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
-			   struct parsed_uri *puri)
+			   struct parsed_uri *puri, struct dbg *dbg)
 {
 	CK_SLOT_INFO si;
 
@@ -186,7 +186,7 @@ static bool match_slot_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 	if (!puri->slt_manuf && !puri->slt_desc)
 		return true;
 
-	if (pkcs11->fns->C_GetSlotInfo(slot_id, &si) != CKR_OK)
+	if (pkcs11_get_slot_info(pkcs11, slot_id, &si, dbg) != CKR_OK)
 		return false;
 
 	if (puri->slt_manuf &&
@@ -202,14 +202,15 @@ static bool match_slot_uri(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
 	return true;
 }
 
-static bool match_library_uri(struct pkcs11_module *pkcs11, struct parsed_uri *puri)
+static bool match_library_uri(struct pkcs11_module *pkcs11, struct parsed_uri *puri,
+			      struct dbg *dbg)
 {
 	CK_INFO ci;
 
 	if (!puri->lib_manuf && !puri->lib_desc && !puri->lib_ver)
 		return true;
 
-	if (pkcs11->fns->C_GetInfo(&ci) != CKR_OK)
+	if (pkcs11_get_info(pkcs11, &ci, dbg) != CKR_OK)
 		return false;
 
 	if (puri->lib_manuf &&
@@ -294,13 +295,13 @@ static CK_SLOT_ID lookup_slot_id(struct pkcs11_module *pkcs11, struct parsed_uri
 	for (i = 0; i < nslots; i++) {
 		CK_SLOT_ID sid = slots[i];
 
-		if (!match_slot_uri(pkcs11, sid, puri)) {
+		if (!match_slot_uri(pkcs11, sid, puri, dbg)) {
 			ps_dbg_debug(dbg, "%s: slot %lu: slot mismatch",
 				     pkcs11->soname, sid);
 			continue;
 		}
 
-		if (!match_token_uri(pkcs11, sid, puri)) {
+		if (!match_token_uri(pkcs11, sid, puri, dbg)) {
 			ps_dbg_debug(dbg, "%s: slot %lu: token mismatch",
 				     pkcs11->soname, sid);
 			continue;
@@ -331,7 +332,7 @@ static int lookup_objects(struct store_ctx *sctx)
 	CK_ULONG nhandles;
 	CK_RV ck_rv;
 
-	if (!match_library_uri(pkcs11, puri)) {
+	if (!match_library_uri(pkcs11, puri, dbg)) {
 		ps_dbg_debug(dbg, "sctx: %p, library mismatch",
 			     sctx);
 		return OSSL_RV_ERR;

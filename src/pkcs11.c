@@ -609,6 +609,54 @@ err:
 	return ck_rv;
 }
 
+CK_RV pkcs11_get_token_info(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
+			    CK_TOKEN_INFO_PTR pti, struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_GetTokenInfo(slot_id, pti);
+	if (ck_rv != CKR_OK)
+		ps_dbg_error(dbg, "%s: C_GetTokenInfo() failed: %d",
+			     pkcs11->soname, ck_rv);
+
+	return ck_rv;
+}
+
+CK_RV pkcs11_get_slot_info(struct pkcs11_module *pkcs11, CK_SLOT_ID slot_id,
+			   CK_SLOT_INFO_PTR psi, struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_GetSlotInfo(slot_id, psi);
+	if (ck_rv != CKR_OK)
+		ps_dbg_error(dbg, "%s: C_GetSlotInfo() failed: %d",
+			     pkcs11->soname, ck_rv);
+
+	return ck_rv;
+}
+
+CK_RV pkcs11_get_info(struct pkcs11_module *pkcs11, CK_INFO_PTR pi,
+		      struct dbg *dbg)
+{
+	CK_RV ck_rv;
+
+	if (!pkcs11 || !dbg)
+		return CKR_ARGUMENTS_BAD;
+
+	ck_rv = pkcs11->fns->C_GetInfo(pi);
+	if (ck_rv != CKR_OK)
+		ps_dbg_error(dbg, "%s: C_GetInfo() failed: %d",
+			     pkcs11->soname, ck_rv);
+
+	return ck_rv;
+}
+
 CK_RV pkcs11_get_slots(struct pkcs11_module *pkcs11,
 		       CK_SLOT_ID_PTR *slots, CK_ULONG *nslots,
 		       struct dbg *dbg)
