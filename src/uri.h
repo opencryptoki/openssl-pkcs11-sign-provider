@@ -37,7 +37,10 @@ struct parsed_uri {
 
 	const char *obj_object;
 	const char *obj_type;
-	const char *obj_id;
+	struct {
+		const char *p;
+		size_t plen;
+	} obj_id;
 
 	struct key_value *vendor_pattr;
 	size_t vendor_pattr_len;

@@ -40,14 +40,20 @@
 #define FILE_PROTOCOL_PREFIX	"file"
 #define FILE_PROTOCOL		FILE_PROTOCOL_PREFIX SEP_PROTOCOL
 
-static void decode(char *s)
+static void decode(char *s, size_t *slen)
 {
 	char *rp, *wp, *endptr;
 	unsigned long tmp;
 	char hex[3] = {0};
+	size_t wp_len = 0;
 
-	if (!s || !strchr(s, '%'))
+	if (!s)
 		return;
+
+	if (!strchr(s, '%')) {
+		*slen = strlen(s);
+		return;
+	}
 
 	rp = wp = s;
 	while(*rp) {
@@ -72,9 +78,11 @@ static void decode(char *s)
 
 		rp++;
 		wp++;
+		wp_len++;
 	}
 out:
 	*wp = '\0';
+	*slen = wp_len;
 }
 
 #define MAX_PIN_LEN		64
@@ -117,9 +125,11 @@ static void retrieve_pin(struct parsed_uri *puri)
 	return;
 }
 
-static void parse_key_attr(char *attr, const char **parsed_key, const char **parsed_attr)
+static void parse_key_attr(char *attr, const char **parsed_key,
+			   const char **parsed_attr, size_t *parsed_attr_len)
 {
 	char *key, **val;
+	size_t val_len = 0;
 
 	if (!attr || !parsed_attr)
 		return;
@@ -132,8 +142,10 @@ static void parse_key_attr(char *attr, const char **parsed_key, const char **par
 
 	key = strsep(val, SEP_KEYVALUE);
 	if (val) {
-		decode(*val);
+		decode(*val, &val_len);
 		*parsed_attr = *val;
+		if (parsed_attr_len)
+			*parsed_attr_len = val_len;
 
 		if (parsed_key)
 			*parsed_key = key;
@@ -158,13 +170,13 @@ static int parse_query(char *qattr, struct parsed_uri *puri)
 		char *e = strsep(next, SEP_QUERYATTRS);
 
 		if (match_elem_attrkey(e, URI_Q_PINVALUE))
-			parse_key_attr(e, NULL, &puri->pin_value);
+			parse_key_attr(e, NULL, &puri->pin_value, NULL);
 		else if (match_elem_attrkey(e, URI_Q_PINSOURCE))
-			parse_key_attr(e, NULL, &puri->pin_source);
+			parse_key_attr(e, NULL, &puri->pin_source, NULL);
 		else if (match_elem_attrkey(e, URI_Q_MODNAME))
-			parse_key_attr(e, NULL, &puri->mod_name);
+			parse_key_attr(e, NULL, &puri->mod_name, NULL);
 		else if (match_elem_attrkey(e, URI_Q_MODPATH))
-			parse_key_attr(e, NULL, &puri->mod_path);
+			parse_key_attr(e, NULL, &puri->mod_path, NULL);
 		else {}	/* TODO: vendor specific query attributes */
 
 	} while (*next);
@@ -185,31 +197,32 @@ static int parse_path(char *pattr, struct parsed_uri *puri)
 		char *e = strsep(next, SEP_PATHATTRS);
 
 		if (match_elem_attrkey(e, URI_P_LIBMANUF))
-			parse_key_attr(e, NULL, &puri->lib_manuf);
+			parse_key_attr(e, NULL, &puri->lib_manuf, NULL);
 		else if (match_elem_attrkey(e, URI_P_LIBDESC))
-			parse_key_attr(e, NULL, &puri->lib_desc);
+			parse_key_attr(e, NULL, &puri->lib_desc, NULL);
 		else if (match_elem_attrkey(e, URI_P_LIBVER))
-			parse_key_attr(e, NULL, &puri->lib_ver);
+			parse_key_attr(e, NULL, &puri->lib_ver, NULL);
 		else if (match_elem_attrkey(e, URI_P_SLOTMANUF))
-			parse_key_attr(e, NULL, &puri->slt_manuf);
+			parse_key_attr(e, NULL, &puri->slt_manuf, NULL);
 		else if (match_elem_attrkey(e, URI_P_SLOTDESC))
-			parse_key_attr(e, NULL, &puri->slt_desc);
+			parse_key_attr(e, NULL, &puri->slt_desc, NULL);
 		else if (match_elem_attrkey(e, URI_P_SLOTID))
-			parse_key_attr(e, NULL, &puri->slt_id);
+			parse_key_attr(e, NULL, &puri->slt_id, NULL);
 		else if (match_elem_attrkey(e, URI_P_TOKTOKEN))
-			parse_key_attr(e, NULL, &puri->tok_token);
+			parse_key_attr(e, NULL, &puri->tok_token, NULL);
 		else if (match_elem_attrkey(e, URI_P_TOKMANUF))
-			parse_key_attr(e, NULL, &puri->tok_manuf);
+			parse_key_attr(e, NULL, &puri->tok_manuf, NULL);
 		else if (match_elem_attrkey(e, URI_P_TOKSERIAL))
-			parse_key_attr(e, NULL, &puri->tok_serial);
+			parse_key_attr(e, NULL, &puri->tok_serial, NULL);
 		else if (match_elem_attrkey(e, URI_P_TOKMODEL))
-			parse_key_attr(e, NULL, &puri->tok_model);
+			parse_key_attr(e, NULL, &puri->tok_model, NULL);
 		else if (match_elem_attrkey(e, URI_P_OBJOBJECT))
-			parse_key_attr(e, NULL, &puri->obj_object);
+			parse_key_attr(e, NULL, &puri->obj_object, NULL);
 		else if (match_elem_attrkey(e, URI_P_OBJTYPE))
-			parse_key_attr(e, NULL, &puri->obj_type);
+			parse_key_attr(e, NULL, &puri->obj_type, NULL);
 		else if (match_elem_attrkey(e, URI_P_OBJID))
-			parse_key_attr(e, NULL, &puri->obj_id);
+			parse_key_attr(e, NULL, &puri->obj_id.p,
+				       &puri->obj_id.plen);
 		else {}	/* TODO: vendor specific path attributes */
 
 	} while (*next);

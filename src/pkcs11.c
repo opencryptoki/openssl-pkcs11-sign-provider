@@ -191,6 +191,16 @@ static inline void attr_string(CK_ATTRIBUTE_PTR attr, CK_ATTRIBUTE_TYPE type,
 	attr->ulValueLen = strlen(s);
 }
 
+static inline void attr_bin(CK_ATTRIBUTE_PTR attr, CK_ATTRIBUTE_TYPE type,
+			    const char *p, size_t plen)
+{
+	if (!attr || !p)
+		return;
+	attr->type = type;
+	attr->pValue = (CK_VOID_PTR)p;
+	attr->ulValueLen = (CK_ULONG)plen;
+}
+
 int mechtype_by_id(int id, CK_MECHANISM_TYPE_PTR mech)
 {
 	size_t i, nelem = sizeof(id_mechtype_map) / sizeof(*id_mechtype_map);
@@ -260,9 +270,9 @@ void pkcs11_attr_type(CK_ATTRIBUTE_PTR attr, const char *type)
 	attr->type = CKA_CLASS;
 }
 
-void pkcs11_attr_id(CK_ATTRIBUTE_PTR attr, const char *id)
+void pkcs11_attr_id(CK_ATTRIBUTE_PTR attr, const char *id, size_t id_len)
 {
-	attr_string(attr, CKA_ID, id);
+	attr_bin(attr, CKA_ID, id, id_len);
 }
 
 void pkcs11_attr_label(CK_ATTRIBUTE_PTR attr, const char *label)
@@ -574,9 +584,9 @@ CK_RV pkcs11_object_handle(struct pkcs11_module *pkcs11,
 
 CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 			  CK_SESSION_HANDLE session,
-			  const char *label, const char *id, const char *type,
-			  CK_OBJECT_HANDLE_PTR *objects, CK_ULONG_PTR nobjects,
-			  struct dbg *dbg)
+			  const char *label, const char *id, size_t id_len,
+			  const char *type, CK_OBJECT_HANDLE_PTR *objects,
+			  CK_ULONG_PTR nobjects, struct dbg *dbg)
 {
 	CK_RV rv;
 	CK_ATTRIBUTE template[3];
@@ -599,7 +609,7 @@ CK_RV pkcs11_find_objects(struct pkcs11_module *pkcs11,
 	if (label)
 		pkcs11_attr_label(&template[tidx++], label);
 	if (id)
-		pkcs11_attr_id(&template[tidx++], id);
+		pkcs11_attr_id(&template[tidx++], id, id_len);
 	if (type)
 		pkcs11_attr_type(&template[tidx++], type);
 	else

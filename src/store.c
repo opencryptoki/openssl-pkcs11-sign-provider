@@ -381,7 +381,8 @@ static int lookup_objects(struct store_ctx *sctx,
 		return OSSL_RV_ERR;
 
 	if (pkcs11_find_objects(pkcs11, sh,
-				puri->obj_object, puri->obj_id, puri->obj_type,
+				puri->obj_object, puri->obj_id.p,
+				puri->obj_id.plen, puri->obj_type,
 				&handles, &nhandles, dbg) != CKR_OK)
 		goto err;
 
