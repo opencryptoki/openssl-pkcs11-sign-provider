@@ -386,6 +386,7 @@ CK_RV pkcs11_sign(struct pkcs11_module *pkcs11,
 		  struct dbg *dbg)
 {
 	CK_RV ck_rv;
+	CK_ULONG l;
 
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
@@ -394,13 +395,16 @@ CK_RV pkcs11_sign(struct pkcs11_module *pkcs11,
 	if (ck_rv != CKR_OK)
 		return ck_rv;
 
+	l = siglen ? *siglen : 0;
 	ck_rv = pkcs11->fns->C_Sign(hsession, (CK_BYTE_PTR)data, datalen,
-				    sig, siglen);
+				    sig, &l);
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_Sign() failed: %d",
 			     pkcs11->soname, ck_rv);
 		return ck_rv;
 	}
+	if (siglen)
+		*siglen = l;
 
 	return CKR_OK;
 }
@@ -439,6 +443,7 @@ CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 		     struct dbg *dbg)
 {
 	CK_RV ck_rv;
+	CK_ULONG l;
 
 	if (!pkcs11 || !dbg)
 		return CKR_ARGUMENTS_BAD;
@@ -447,8 +452,14 @@ CK_RV pkcs11_decrypt(struct pkcs11_module *pkcs11,
 	if (ck_rv != CKR_OK)
 		return ck_rv;
 
-	return pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
-				      data, datalen);
+	l = datalen ? *datalen : 0;
+	ck_rv = pkcs11->fns->C_Decrypt(hsession, (CK_BYTE_PTR)cdata, cdatalen,
+				       data, &l);
+
+	if (datalen)
+		*datalen = l;
+
+	return ck_rv;
 }
 
 CK_RV pkcs11_fetch_attributes(struct pkcs11_module *pkcs11,
