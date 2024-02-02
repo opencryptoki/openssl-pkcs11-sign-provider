@@ -20,7 +20,7 @@ static const CK_OBJECT_CLASS oc_certificate = CKO_CERTIFICATE;
 
 const char *str_priv = "private";
 const char *str_pub = "public";
-const char *str_cert = "certificate";
+const char *str_cert = "cert";
 
 static struct {
 	int id;
@@ -251,12 +251,13 @@ void pkcs11_attr_type(CK_ATTRIBUTE_PTR attr, const char *type)
 		attr->pValue = (CK_VOID_PTR)&oc_private;
 	else if (strncmp(type, str_pub, strlen(str_pub)) == 0)
 		attr->pValue = (CK_VOID_PTR)&oc_public;
-	else if (strncmp(type, str_cert, strlen(str_pub)) == 0)
+	else if (strncmp(type, str_cert, strlen(str_cert)) == 0)
 		attr->pValue = (CK_VOID_PTR)&oc_certificate;
 	else
 		return;		/* not supported:  data, secret-key */
 
 	attr->ulValueLen = sizeof(CK_OBJECT_CLASS);
+	attr->type = CKA_CLASS;
 }
 
 void pkcs11_attr_id(CK_ATTRIBUTE_PTR attr, const char *id)
