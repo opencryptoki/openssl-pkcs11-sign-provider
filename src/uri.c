@@ -40,12 +40,11 @@
 #define FILE_PROTOCOL_PREFIX	"file"
 #define FILE_PROTOCOL		FILE_PROTOCOL_PREFIX SEP_PROTOCOL
 
-#define HEX_CHARS		"0123456789abcdefABCDEF"
-
 static void decode(char *s)
 {
 	char *rp, *wp, *endptr;
 	unsigned long tmp;
+	char hex[3] = {0};
 
 	if (!s || !strchr(s, '%'))
 		return;
@@ -54,18 +53,15 @@ static void decode(char *s)
 	while(*rp) {
 		switch(*rp) {
 		case '%':
-			/* abort on invalid format and chars */
-			if ((strlen(rp) < 3) ||
-			    !strchr(HEX_CHARS, rp[1]) ||
-			    !strchr(HEX_CHARS, rp[2])) {
-				*wp = '\0';
-				return;
-			}
+			if (strlen(rp) < 3)
+				goto out;		/* invalid format */
 
 			rp++;				/* skip % */
-			endptr = rp + 2;		/* 2 chars only */
+			memcpy(hex, rp, 2);		/* 2 chars only */
 
-			tmp = strtoul(rp, &endptr, 16);	/* convert */
+			tmp = strtoul(hex, &endptr, 16);/* convert */
+			if (*endptr != '\0')
+				goto out;		/* non-hex chars */
 			*wp = (char)(tmp & 0xff);
 
 			rp++;
@@ -77,6 +73,7 @@ static void decode(char *s)
 		rp++;
 		wp++;
 	}
+out:
 	*wp = '\0';
 }
 
