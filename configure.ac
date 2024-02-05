@@ -46,10 +46,12 @@ AC_TYPE_SIZE_T
 AC_CHECK_FUNCS([memset strchr strtoul])
 
 # Compile flags
-AX_CHECK_COMPILE_FLAG(
-	[-std=c99],
-	[CFLAGS="$CFLAGS -std=c99"],
-	AC_MSG_ERROR([C compiler must support C99 standard])
+m4_ifdef([AX_CHECK_COMPILE_FLAG],
+	[AX_CHECK_COMPILE_FLAG(
+		[-std=c99],
+		[CFLAGS="$CFLAGS -std=c99"],
+		AC_MSG_ERROR([C compiler must support C99 standard]))],
+	[AC_MSG_ERROR([AX_CHECK_COMPILE_FLAG macro is missing.])]
 )
 STD_CFLAGS="-Wall -Wextra"
 

@@ -9,6 +9,10 @@ material will be forwarded to an OpenSSL built-in provider.
 This project requires OpenSSL 3.0 or later, as well as opencryptoki.
 Support for other PKCS\#11 implementations is currently not available.
 
+The configuration step requires m4-macros of the autotools-archive project.
+It is recommended to install the autotools-archive package on the build
+system.
+
 To build the provider, use the following commands:
 
 ```
