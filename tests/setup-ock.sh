@@ -53,7 +53,8 @@ printf "%s" "${OCK_USER_PIN}" > ${PIN_SOURCE} \
 
 #######################################
 echo "## Generate CA key/cert and server key/cert (ec)"
-LABEL="test_ec_secp384r1"
+LABEL="test%ec_secp384r1"
+URI_LABEL=$(pctencode_rfc7512 "${LABEL}")
 FILE_PEM_CA_PRV="${TMPPDIR}/ca_key.prv"
 FILE_PEM_CA_CRT="${TMPPDIR}/ca_cert.crt"
 FILE_PEM_ECDSA_PRV="${TMPPDIR}/${LABEL}_key.prv"
@@ -66,7 +67,7 @@ generate_ec_tls_certificates \
 #######################################
 echo "## Re-import server keys (ec)"
 URI_TOKEN="pkcs11:token=${OCK_TOKEN}"
-URI_KEY_ECDSA="${URI_TOKEN};object=${LABEL}"
+URI_KEY_ECDSA="${URI_TOKEN};object=${URI_LABEL}"
 URI_KEY_ECDSA_PRV="${URI_KEY_ECDSA};type=private"
 URI_KEY_ECDSA_PUB="${URI_KEY_ECDSA};type=public"
 
@@ -77,13 +78,13 @@ ${P11TOOL} --delete				\
 GNUTLS_PIN=${OCK_USER_PIN}			\
 ${P11TOOL} --write --label ${LABEL}		\
 	   --mark-private			\
-	   --load-privkey=${FILE_PEM_ECDSA_PRV}	\
+	   --load-privkey="${FILE_PEM_ECDSA_PRV}" \
 	   "${URI_TOKEN}" 2> /dev/null		\
 || exit 99
 
 GNUTLS_PIN=${OCK_USER_PIN}			\
 ${P11TOOL} --write --label ${LABEL}		\
-	   --load-pubkey=${FILE_PEM_ECDSA_PUB}	\
+	   --load-pubkey="${FILE_PEM_ECDSA_PUB}" \
 	   "${URI_TOKEN}" 2> /dev/null		\
 || exit 99
 
