@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+-
+
+## [1.0.1] - 2024-02-06
+
 - example RPM packaging
+- fork handling (issue #2)
+- support passphrase callback for PIN (issue #5)
+- additional testcases
+- fix URI parsing (issues #9, #10)
+- various fixes and cleanups
 
 ## [1.0.0] - 2023-05-17
 
