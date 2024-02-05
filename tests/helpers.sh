@@ -164,3 +164,21 @@ ossl() {
 	echo openssl $*
 	eval openssl $1
 }
+
+pctencode_rfc7512() {
+	local LC_ALL=C
+	local c i n=${#1}
+
+	for (( i=0; i<n; i++ )); do
+		c="${1:i:1}"
+		case "$c" in
+			[-_.~A-Za-z0-9:\[\]@!\$\'\(\)*+,=])
+				printf '%s' "$c"
+				;;
+			*)
+				printf '%%%02X' "'$c"
+				;;
+		esac
+	done
+	echo
+}
