@@ -42,7 +42,7 @@ PKCS#11 for operations with private keys in PKCS#11 tokens.
 
 %files
 %license COPYING
-%doc README openssl-*.cnf.sample
+%doc README.md openssl-*.cnf.sample
 %{modulesdir}/pkcs11sign.so
 %{_mandir}/man5/pkcs11sign.cnf.5*
 %{_mandir}/man7/pkcs11sign.7*
