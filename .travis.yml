@@ -1,0 +1,29 @@
+dist: jammy
+
+language: c
+
+before_install:
+    - sudo apt -qq update
+    - sudo apt install -y autoconf-archive libtool pkg-config sed
+    - sudo apt install -y libssl-dev libopencryptoki-dev
+    - sudo apt install -y opencryptoki openssl gnutls-bin
+
+jobs:
+    include:
+        - name: "linux-x86_64-gcc"
+          os: linux
+          arch: amd64
+          compiler: gcc
+
+before_script:
+    - sudo /sbin/pkcsconf -c 3 -P -S 87654321 -n 76543210
+    - echo softtok | sudo /sbin/pkcsconf -c 3 -I -S 76543210
+    - sudo /sbin/pkcsconf -c 3 -u -S 76543210 -n 12345678
+    - sudo usermod -a -G pkcs11 $USER
+
+script:
+    - autoreconf -fi
+    - ./configure
+    - sudo -E su $USER -c 'id; make check'
+    - cat tests/setup-*.log
+    - cat tests/test-suite.log
