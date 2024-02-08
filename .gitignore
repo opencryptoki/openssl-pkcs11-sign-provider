@@ -17,6 +17,7 @@ tests/tfork
 
 # Distribution pattern
 /*-?.?.?.tar.gz
+/*-?.?.?.tar.gz.asc
 
 # common ignore-patterns
 # Prerequisites
