@@ -16,11 +16,16 @@ unset OPENSSL_CONF
 source "${TESTSDIR}/helpers.sh"
 
 command -v p11tool > /dev/null || exit 77
-P11TOOL="p11tool --batch --login"
+LIBOCK=$(/sbin/ldconfig -Np | grep -Eo '/.*/libopencryptoki.so.0$' | head -n1)
+P11TOOL="p11tool --provider ${LIBOCK} --batch --login"
 
 echo "##################################################"
 echo "## Check test environment requirements (module: ock)"
 echo "##"
+
+#######################################
+echo "## p11tool command"
+echo "## - ${P11TOOL}"
 
 #######################################
 echo "## Check pkcsslotd"
