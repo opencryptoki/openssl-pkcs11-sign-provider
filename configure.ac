@@ -29,9 +29,9 @@ PKG_PROG_PKG_CONFIG
 
 # Checks for libraries.
 PKG_CHECK_MODULES(
-	[OPENSSL],[libcrypto >= 3.0.8, libssl],
+	[OPENSSL],[libcrypto >= 3, libssl],
 	,
-	[AC_MSG_ERROR([libcrypto >= 3.0.8 is required])]
+	[AC_MSG_ERROR([libcrypto >= 3 is required])]
 )
 
 # Checks for header files.
