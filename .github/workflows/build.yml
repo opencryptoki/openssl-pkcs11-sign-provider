@@ -1,0 +1,62 @@
+name: Build
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  build:
+    name: CI with soft-tokens
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [debian]
+        compiler: [gcc]
+        token: [ock]
+        include:
+          - name: debian
+            container: debian:sid
+    container: ${{ matrix.container }}
+    steps:
+      - name: Install Dependencies
+        run: |
+          if [ -f /etc/debian_version ]; then
+            apt -y update
+            apt -y install git make automake autoconf-archive libtool pkg-config \
+              sed libopencryptoki-dev libssl-dev openssl
+            if [ "${{ matrix.compiler }}" = "gcc" ]; then
+              apt -y install gcc g++
+            fi
+            if [ "${{ matrix.token }}" = "ock" ]; then
+              apt -y install opencryptoki gnutls-utils
+            fi
+          fi
+      - name: Prep soft-tokens
+        run: |
+          if [ "${{ matrix.token }}" = "ock" ]; then
+            /sbin/pkcsconf -c 3 -P -S 87654321 -n 76543210
+            echo softtok | /sbin/pkcsconf -c 3 -I -S 76543210
+            /sbin/pkcsconf -c 3 -u -S 76543210 -n 12345678
+          fi
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Setup
+        run: |
+          autoreconf -fiv
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            ./configure CC=gcc CXX=g++
+          fi
+      - name: Build and Test
+        run: make check
+      - uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: Test logs ${{ matrix.name }}, ${{ matrix.compiler }}, ${{ matrix.token }}
+          path: |
+            config.log
+            tests/*.log
+            tests/tmp.${{ matrix.token }}/pkcs11sign.cnf
+            tests/tmp.${{ matrix.token }}/setenv
