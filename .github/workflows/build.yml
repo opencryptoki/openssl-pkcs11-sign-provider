@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  build:
+    name: CI with soft-tokens
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [fedora]
+        compiler: [gcc]
+        token: [ock]
+        include:
+          - name: fedora
+            container: fedora:latest
+    container: ${{ matrix.container }}
+    steps:
+      - name: Install Dependencies
+        run: |
+          if [ -f /etc/fedora-release ]; then
+            dnf -y install git make automake autoconf-archive libtool pkg-config \
+              sed opencryptoki-devel opencryptoki-devel openssl openssl-devel
+            if [ "${{ matrix.compiler }}" = "gcc" ]; then
+              dnf -y install gcc g++
+            fi
+            if [ "${{ matrix.token }}" = "ock" ]; then
+              dnf -y install opencryptoki opencryptoki-swtok gnutls-utils
+            fi
+          fi
+      - name: Prep soft-tokens
+        run: |
+          if [ "${{ matrix.token }}" = "ock" ]; then
+            su -g root -G pkcs11 -c "pkcsslotd"
+            su -g root -G pkcs11 -c "pkcsconf -c 3 -P -S 87654321 -n 76543210"
+            echo softtok | su -g root -G pkcs11 -c "pkcsconf -c 3 -I -S 76543210"
+            su -g root -G pkcs11 -c "pkcsconf -c 3 -u -S 76543210 -n 12345678"
+            su -g root -G pkcs11 -c "pkcsconf -t"
+          fi
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Configure
+        run: |
+          autoreconf -fi
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            ./configure CC=gcc CXX=g++
+          fi
+      - name: Build and Test
+        run: |
+          su -g root -G pkcs11 -c "make check"
+      - uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: Test logs ${{ matrix.name }}, ${{ matrix.compiler }}, ${{ matrix.token }}
+          path: |
+            /etc/opencryptoki/opencryptoki.conf
+            config.log
+            tests/*.log
+            tests/tmp.${{ matrix.token }}/pkcs11sign.cnf
+            tests/tmp.${{ matrix.token }}/setenv
