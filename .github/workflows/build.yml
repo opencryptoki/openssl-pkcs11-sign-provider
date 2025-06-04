@@ -36,7 +36,7 @@ jobs:
       - name: Prep soft-tokens
         run: |
           if [ "${{ matrix.token }}" = "ock" ]; then
-            sudo systemctl start pkcsslotd
+            sudo pkcsslotd
             su -g root -G pkcs11 -c "pkcsconf -c 3 -P -S 87654321 -n 76543210"
             echo softtok | su -g root -G pkcs11 -c "pkcsconf -c 3 -I -S 76543210"
             su -g root -G pkcs11 -c "pkcsconf -c 3 -u -S 76543210 -n 12345678"
