@@ -868,8 +868,20 @@ int pkcs11_module_load(struct pkcs11_module *pkcs,
 	}
 
 	pkcs->soname = OPENSSL_strdup(module);
-	if (module_initargs)
+	if (!pkcs->soname) {
+		ps_dbg_error(dbg, "%s: OPENSSL_strdup(module) failed: %s",
+			     module);
+		return OSSL_RV_ERR;
+	}
+
+	if (module_initargs) {
 		pkcs->initargs = OPENSSL_strdup(module_initargs);
+		if (!pkcs->initargs) {
+			ps_dbg_error(dbg, "%s: OPENSSL_strdup(module_initargs) failed",
+				     pkcs->soname);
+			return OSSL_RV_ERR;
+		}
+	}
 
 	dlerror();
 	pkcs->dlhandle = dlopen(module,
@@ -878,7 +890,7 @@ int pkcs11_module_load(struct pkcs11_module *pkcs,
 		err = dlerror();
 		ps_dbg_error(dbg, "%s: dlopen() failed: %s",
 			     pkcs->soname, err);
-		goto err;
+		return OSSL_RV_ERR;
 	}
 
 	c_get_function_list = dlsym(pkcs->dlhandle, "C_GetFunctionList");
@@ -886,21 +898,15 @@ int pkcs11_module_load(struct pkcs11_module *pkcs,
 		err = dlerror();
 		ps_dbg_error(dbg, "%s: dlsym() failed: %s",
 			     pkcs->soname, err);
-		goto close_err;
+		return OSSL_RV_ERR;
 	}
 
 	ck_rv = c_get_function_list(&pkcs->fns);
 	if (ck_rv != CKR_OK) {
 		ps_dbg_error(dbg, "%s: C_GetFunctionList() failed: %d",
 			     pkcs->soname, ck_rv);
-		goto close_err;
+		return OSSL_RV_ERR;
 	}
 
 	return OSSL_RV_OK;
-
-close_err:
-	dlclose(pkcs->dlhandle);
-err:
-	OPENSSL_free(pkcs->soname);
-	return OSSL_RV_ERR;
 }
