@@ -36,14 +36,14 @@ jobs:
       - name: Prep soft-tokens
         run: |
           if [ "${{ matrix.token }}" = "ock" ]; then
-            su -g root -G pkcs11 -c "pkcsslotd"
+            sudo pkcsslotd
             su -g root -G pkcs11 -c "pkcsconf -c 3 -P -S 87654321 -n 76543210"
             echo softtok | su -g root -G pkcs11 -c "pkcsconf -c 3 -I -S 76543210"
             su -g root -G pkcs11 -c "pkcsconf -c 3 -u -S 76543210 -n 12345678"
             su -g root -G pkcs11 -c "pkcsconf -t"
           fi
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Configure
         run: |
           autoreconf -fi
@@ -53,7 +53,7 @@ jobs:
       - name: Build and Test
         run: |
           su -g root -G pkcs11 -c "make check"
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: Test logs ${{ matrix.name }}, ${{ matrix.compiler }}, ${{ matrix.token }}
