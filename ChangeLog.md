@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - various fixes and cleanups
 - update man-pages
+- fix key management registration and key typing
 
 ## [1.0.1] - 2024-02-06
 
