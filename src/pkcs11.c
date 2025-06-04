@@ -900,7 +900,9 @@ int pkcs11_module_load(struct pkcs11_module *pkcs,
 
 close_err:
 	dlclose(pkcs->dlhandle);
+	pkcs->dlhandle = NULL;
 err:
 	OPENSSL_free(pkcs->soname);
+	pkcs->soname = NULL;
 	return OSSL_RV_ERR;
 }
