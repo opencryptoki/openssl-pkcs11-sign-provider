@@ -69,7 +69,7 @@ static int key2params(struct obj *obj, OSSL_PARAM *params, unsigned int nparams)
 		data_type = "RSA";
 		break;
 	case CKK_ECDSA:
-		data_type = "EC:id-ecPublicKey:1.2.840.10045.2.1";
+		data_type = "EC";
 		break;
 	default:
 		return OSSL_RV_ERR;
