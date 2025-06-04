@@ -4,7 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
--
+- various fixes and cleanups
+- update man-pages
 
 ## [1.0.1] - 2024-02-06
 
