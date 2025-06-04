@@ -1128,11 +1128,11 @@ static const OSSL_DISPATCH ps_keymgmt_functions_ec[] = {
 };
 
 const OSSL_ALGORITHM ps_keymgmt[] = {
-	{ "RSA:rsaEncryption", "provider="PS_PROV_NAME,
+	{ "RSA:rsaEncryption:1.2.840.113549.1.1.1", "provider="PS_PROV_NAME,
 				ps_keymgmt_functions_rsa, NULL },
-	{ "RSA-PSS:RSASSA-PSS", "provider="PS_PROV_NAME,
+	{ "RSA-PSS:RSASSA-PSS:1.2.840.113549.1.1.10", "provider="PS_PROV_NAME,
 				ps_keymgmt_functions_rsapss, NULL },
-	{ "EC:id-ecPublicKey", "provider="PS_PROV_NAME,
+	{ "EC:id-ecPublicKey:1.2.840.10045.2.1", "provider="PS_PROV_NAME,
 				ps_keymgmt_functions_ec, NULL },
 	{ NULL, NULL, NULL, NULL }
 };
