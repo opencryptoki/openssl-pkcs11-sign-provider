@@ -36,3 +36,4 @@ All notable changes to this project will be documented in this file.
 [unreleased]: https://github.com/opencryptoki/openssl-pkcs11-sign-provider/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/opencryptoki/openssl-pkcs11-sign-provider/compare/base...v1.0.0
 [1.0.1]: https://github.com/opencryptoki/openssl-pkcs11-sign-provider/compare/v1.0.0...v1.0.1
+[1.0.2]: https://github.com/opencryptoki/openssl-pkcs11-sign-provider/compare/v1.0.1...v1.0.2
