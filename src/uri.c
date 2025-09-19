@@ -107,6 +107,14 @@ static char *retrieve_pin_from_file(const char *source)
 	if (rc <= 0)
 		goto err;
 
+	/* files may contain newlines, remove control characters at the end */
+	for (int i = rc - 1; i >= 0; i--) {
+		if (pin[i] == '\n' || pin[i] == '\r')
+			pin[i] = '\0';
+		else
+			break;
+	}
+
 	rv = OPENSSL_strndup(pin, MAX_PIN_LEN);
 err:
 	BIO_free(fp);
