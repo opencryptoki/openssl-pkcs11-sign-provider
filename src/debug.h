@@ -16,7 +16,7 @@
 #define DBG_INFO	(2)
 #define DBG_DEBUG	(3)
 
-inline bool ps_dbg_enabled(struct dbg *dbg)
+static inline bool ps_dbg_enabled(struct dbg *dbg)
 {
 	return (dbg) && (dbg->stream);
 }
