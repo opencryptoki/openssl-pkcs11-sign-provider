@@ -100,8 +100,8 @@ Rules for the PIN file:
 .IP \[bu] 2
 one PIN per PIN file
 .IP \[bu]
-the PIN file must only contain the PIN, no comments, no linefeed or other
-characters
+the PIN file must only contain the PIN, no comments, but can contain linefeed
+or newline characters at the end.
 .IP \[bu]
 the PIN file must be readable by the application
 .IP \[bu]
@@ -118,7 +118,7 @@ user.
 PINFILE="/path/to/my_pinfile.txt"
 touch "${PINFILE}"
 chmod u=rw,g=,o= "${PINFILE}"
-(read \-rsp "Enter PIN: " PIN; echo \-n ${PIN}) > "${PINFILE}"
+(read \-rsp "Enter PIN: " PIN; echo ${PIN}) > "${PINFILE}"
 .EE
 .in
 .PP
