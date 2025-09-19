@@ -29,6 +29,7 @@ struct store_ctx {
 	CK_ULONG nobjects;
 	CK_ULONG load_idx;
 	int expect;
+	bool error;
 };
 
 #define MAX_PIN		64
@@ -377,8 +378,10 @@ static int lookup_objects(struct store_ctx *sctx,
 		puri->pin = pin_from_cb(pw_cb, pw_cbarg, sctx->slot_login_info);
 
 	if (pkcs11_session_open_login(pkcs11, sctx->slot_id, &sh,
-				      puri->pin, dbg) != CKR_OK)
+				      puri->pin, dbg) != CKR_OK) {
+		sctx->error = true;
 		return OSSL_RV_ERR;
+	}
 
 	if (pkcs11_find_objects(pkcs11, sh,
 				puri->obj_object, puri->obj_id.p,
@@ -473,6 +476,7 @@ static struct store_ctx *store_ctx_init(struct provider_ctx *pctx)
 	sctx->pctx = pctx;
 	sctx->slot_id = CK_UNAVAILABLE_INFORMATION;
 	sctx->objects_loaded = false;
+	sctx->error = false;
 
 	return sctx;
 }
@@ -599,7 +603,8 @@ static int ps_store_eof(void *vctx)
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, entry",
 		     sctx, sctx->pctx);
 
-	rv = (!sctx->objects_loaded || (sctx->load_idx < sctx->nobjects)) ?
+	rv = (!sctx->error &&
+	      (!sctx->objects_loaded || (sctx->load_idx < sctx->nobjects))) ?
 		OSSL_RV_FALSE : OSSL_RV_TRUE;
 
 	ps_dbg_debug(dbg, "sctx: %p, pctx: %p, exit: %d",
